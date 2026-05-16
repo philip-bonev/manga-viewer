@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>EPUB Comic Viewer</title>
+    <title>Manga Viewer</title>
     <script type="module" src="/main.js" defer></script>
   </head>
 
   <body>
     <div id="toolbar">
-      <button id="open-btn" class="toolbar-btn" title="Open EPUB file">
+      <button id="open-btn" class="toolbar-btn" title="Open file">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
           <polyline points="14 2 14 8 20 8"></polyline>
@@ -19,8 +19,46 @@
         </svg>
         Open
       </button>
+      <button id="prev-btn" class="toolbar-btn" title="Previous issue" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        Prev
+      </button>
+      <button id="next-btn" class="toolbar-btn" title="Next issue" disabled>
+        Next
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </button>
       <span id="file-name">No file opened</span>
-      <button id="close-btn" class="toolbar-btn" title="Close EPUB file" disabled>
+      <div id="zoom-controls" class="zoom-controls">
+        <button id="zoom-out-btn" class="toolbar-btn zoom-btn" title="Zoom out" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            <line x1="8" y1="11" x2="14" y2="11"></line>
+          </svg>
+        </button>
+        <span id="zoom-level" class="zoom-level">100%</span>
+        <button id="zoom-in-btn" class="toolbar-btn zoom-btn" title="Zoom in" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            <line x1="11" y1="8" x2="11" y2="14"></line>
+            <line x1="8" y1="11" x2="14" y2="11"></line>
+          </svg>
+        </button>
+        <button id="zoom-fit-btn" class="toolbar-btn zoom-btn" title="Fit to width" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h6v6"></path>
+            <path d="M9 21H3v-6"></path>
+            <path d="M21 3l-7 7"></path>
+            <path d="M3 21l7-7"></path>
+          </svg>
+        </button>
+      </div>
+      <button id="close-btn" class="toolbar-btn" title="Close file" disabled>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -36,7 +74,7 @@
           <circle cx="8.5" cy="8.5" r="1.5"></circle>
           <polyline points="21 15 16 10 5 21"></polyline>
         </svg>
-        <p>Open an EPUB file to view comics</p>
+        <p>Open a file to view manga</p>
       </div>
       <div id="images-container"></div>
       <div id="loading-indicator" class="hidden">

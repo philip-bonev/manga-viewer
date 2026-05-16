@@ -973,22 +973,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "epub-viewer"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "quick-xml 0.37.5",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-opener",
- "zip",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2109,6 +2093,23 @@ dependencies = [
  "cc",
  "libc",
  "pkg-config",
+]
+
+[[package]]
+name = "manga-viewer"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "quick-xml 0.37.5",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-opener",
+ "zip",
 ]
 
 [[package]]

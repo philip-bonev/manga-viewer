@@ -75,6 +75,25 @@ html, body {
   text-overflow: ellipsis;
 }
 
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoom-btn {
+  padding: 6px 8px;
+}
+
+.zoom-level {
+  min-width: 48px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+  user-select: none;
+}
+
 #viewer-container {
   height: calc(100vh - 48px);
   overflow-y: auto;
@@ -124,6 +143,8 @@ html, body {
   align-items: center;
   padding: 8px;
   gap: 4px;
+  transition: transform 0.15s ease;
+  transform-origin: top center;
 }
 
 #images-container img {

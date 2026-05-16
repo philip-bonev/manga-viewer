@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    epub_viewer_lib::run()
+    manga_viewer_lib::run()
 }

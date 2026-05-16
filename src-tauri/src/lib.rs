@@ -7,6 +7,7 @@ use tauri::State;
 
 pub struct EpubState {
     pub file_path: Option<PathBuf>,
+    pub cli_file: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -377,6 +378,97 @@ fn close_epub(state: State<'_, Mutex<EpubState>>) -> Result<(), String> {
     Ok(())
 }
 
+fn extract_series_info(file_stem: &str) -> Option<(String, f64)> {
+    let re = regex::Regex::new(r"^(.*?)[-_ ](\d+(?:\.\d+)?)").ok()?;
+    let captures = re.captures(file_stem)?;
+    let series = captures.get(1)?.as_str().trim().to_lowercase();
+    let num: f64 = captures.get(2)?.as_str().parse().ok()?;
+    if series.is_empty() {
+        return None;
+    }
+    Some((series, num))
+}
+
+#[tauri::command]
+fn get_next_file(path: String) -> Option<String> {
+    let file_path = std::path::PathBuf::from(&path);
+    let parent = file_path.parent()?;
+    let file_name = file_path.file_stem()?.to_string_lossy().to_string();
+    let extension = file_path.extension()?.to_string_lossy().to_string();
+
+    let (current_series, current_num) = extract_series_info(&file_name)?;
+
+    let mut candidates: Vec<(f64, std::path::PathBuf)> = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(parent) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if !entry_path.is_file() {
+                continue;
+            }
+            if entry_path.extension().map(|e| e.to_string_lossy().to_lowercase()) != Some(extension.clone()) {
+                continue;
+            }
+            let entry_stem = entry_path.file_stem()?.to_string_lossy().to_string();
+            if let Some((series, num)) = extract_series_info(&entry_stem) {
+                if series == current_series {
+                    candidates.push((num, entry_path));
+                }
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (num, next_path) in candidates {
+        if num > current_num {
+            return next_path.to_str().map(|s| s.to_string());
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+fn get_prev_file(path: String) -> Option<String> {
+    let file_path = std::path::PathBuf::from(&path);
+    let parent = file_path.parent()?;
+    let file_name = file_path.file_stem()?.to_string_lossy().to_string();
+    let extension = file_path.extension()?.to_string_lossy().to_string();
+
+    let (current_series, current_num) = extract_series_info(&file_name)?;
+
+    let mut candidates: Vec<(f64, std::path::PathBuf)> = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(parent) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if !entry_path.is_file() {
+                continue;
+            }
+            if entry_path.extension().map(|e| e.to_string_lossy().to_lowercase()) != Some(extension.clone()) {
+                continue;
+            }
+            let entry_stem = entry_path.file_stem()?.to_string_lossy().to_string();
+            if let Some((series, num)) = extract_series_info(&entry_stem) {
+                if series == current_series {
+                    candidates.push((num, entry_path));
+                }
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (num, prev_path) in candidates {
+        if num < current_num {
+            return prev_path.to_str().map(|s| s.to_string());
+        }
+    }
+
+    None
+}
+
 #[tauri::command]
 fn open_cbz_file(
     state: State<'_, Mutex<EpubState>>,
@@ -436,18 +528,37 @@ fn open_cbz_file(
     Ok(EpubImages { images })
 }
 
+#[tauri::command]
+fn get_cli_file(state: State<'_, Mutex<EpubState>>) -> Option<String> {
+    let state = state.lock().unwrap();
+    state.cli_file.clone()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let cli_file = std::env::args()
+        .skip(1)
+        .find(|arg| {
+            let ext = arg.split('.').last().unwrap_or("").to_lowercase();
+            matches!(ext.as_str(), "epub" | "cbz")
+        });
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .manage(Mutex::new(EpubState { file_path: None }))
+        .manage(Mutex::new(EpubState {
+            file_path: None,
+            cli_file,
+        }))
         .invoke_handler(tauri::generate_handler![
             open_epub_file,
             open_cbz_file,
             get_image_data,
-            close_epub
+            close_epub,
+            get_cli_file,
+            get_next_file,
+            get_prev_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
