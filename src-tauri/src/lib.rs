@@ -562,40 +562,31 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            use tauri::Manager;
+            use tauri::Emitter;
+            if let Some(path) = argv.iter().skip(1).find(|arg| {
+                let path = std::path::Path::new(arg);
+                if let Some(ext) = path.extension() {
+                    let ext = ext.to_string_lossy().to_lowercase();
+                    return matches!(ext.as_ref(), "epub" | "cbz");
+                }
+                false
+            }) {
+                let decoded = percent_encoding::percent_decode_str(path).decode_utf8_lossy();
+                let clean_path = decoded.strip_prefix("file://")
+                    .unwrap_or(&decoded)
+                    .to_string();
+                let state = app.state::<Mutex<EpubState>>();
+                let mut state = state.inner().lock().unwrap();
+                state.cli_file = Some(clean_path.clone());
+                let _ = app.emit("file-opened", clean_path);
+            }
+        }))
         .manage(Mutex::new(EpubState {
             file_path: None,
             cli_file,
         }))
-        .setup(|app| {
-            #[cfg(target_os = "macos")]
-            {
-                use tauri::Emitter;
-                use tauri::Listener;
-                use tauri::Manager;
-
-                let handle = app.handle().clone();
-                let handle_for_listen = handle.clone();
-
-                handle_for_listen.listen("tauri://file-open", move |event| {
-                    let payload = event.payload();
-                    if let Ok(paths) = serde_json::from_str::<Vec<String>>(payload) {
-                        if let Some(path) = paths.first() {
-                            let decoded = percent_encoding::percent_decode_str(path).decode_utf8_lossy();
-                            let clean_path = decoded.strip_prefix("file://")
-                                .unwrap_or(&decoded)
-                                .to_string();
-                            {
-                                let state = handle.state::<Mutex<EpubState>>();
-                                let mut state = state.inner().lock().unwrap();
-                                state.cli_file = Some(clean_path.clone());
-                            }
-                            let _ = handle.emit("file-opened", clean_path);
-                        }
-                    }
-                });
-            }
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             open_epub_file,
             open_cbz_file,
