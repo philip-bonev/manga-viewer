@@ -536,27 +536,7 @@ fn get_cli_file(state: State<'_, Mutex<EpubState>>) -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let cli_file = std::env::args()
-        .skip(1)
-        .find(|arg| {
-            if arg.starts_with("-psn_") {
-                return false;
-            }
-            let path = std::path::Path::new(arg);
-            if let Some(ext) = path.extension() {
-                let ext = ext.to_string_lossy().to_lowercase();
-                return matches!(ext.as_ref(), "epub" | "cbz");
-            }
-            false
-        })
-        .map(|p| {
-            let decoded = percent_encoding::percent_decode_str(&p).decode_utf8_lossy();
-            if decoded.starts_with("file://") {
-                decoded.strip_prefix("file://").unwrap_or(&decoded).to_string()
-            } else {
-                decoded.into_owned()
-            }
-        });
+    let cli_file = find_file_in_args(std::env::args().skip(1));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -565,22 +545,11 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             use tauri::Manager;
             use tauri::Emitter;
-            if let Some(path) = argv.iter().skip(1).find(|arg| {
-                let path = std::path::Path::new(arg);
-                if let Some(ext) = path.extension() {
-                    let ext = ext.to_string_lossy().to_lowercase();
-                    return matches!(ext.as_ref(), "epub" | "cbz");
-                }
-                false
-            }) {
-                let decoded = percent_encoding::percent_decode_str(path).decode_utf8_lossy();
-                let clean_path = decoded.strip_prefix("file://")
-                    .unwrap_or(&decoded)
-                    .to_string();
+            if let Some(path) = find_file_in_args(argv.iter().cloned()) {
                 let state = app.state::<Mutex<EpubState>>();
                 let mut state = state.inner().lock().unwrap();
-                state.cli_file = Some(clean_path.clone());
-                let _ = app.emit("file-opened", clean_path);
+                state.cli_file = Some(path.clone());
+                let _ = app.emit("file-opened", path);
             }
         }))
         .manage(Mutex::new(EpubState {
@@ -598,4 +567,23 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn find_file_in_args(args: impl Iterator<Item = String>) -> Option<String> {
+    for arg in args {
+        if arg.starts_with("-psn_") || arg.starts_with("-") {
+            continue;
+        }
+        let path = std::path::Path::new(&arg);
+        if let Some(ext) = path.extension() {
+            let ext = ext.to_string_lossy().to_lowercase();
+            if matches!(ext.as_ref(), "epub" | "cbz") {
+                let decoded = percent_encoding::percent_decode_str(&arg).decode_utf8_lossy();
+                return Some(decoded.strip_prefix("file://")
+                    .unwrap_or(&decoded)
+                    .to_string());
+            }
+        }
+    }
+    None
 }
