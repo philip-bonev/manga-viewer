@@ -68,56 +68,51 @@ fn parse_opf(opf_content: &str) -> (HashMap<String, (String, String)>, Vec<Strin
 
     loop {
         match reader.read_event() {
-            Ok(Event::Start(ref e)) => {
-                match e.name().as_ref() {
-                    b"manifest" => in_manifest = true,
-                    b"spine" => in_spine = true,
-                    b"item" if in_manifest => {
-                        current_item_id.clear();
-                        current_item_href.clear();
-                        current_item_media.clear();
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                b"id" => {
-                                    current_item_id =
-                                        String::from_utf8_lossy(&attr.value).to_string();
-                                }
-                                b"href" => {
-                                    current_item_href =
-                                        String::from_utf8_lossy(&attr.value).to_string();
-                                }
-                                b"media-type" => {
-                                    current_item_media =
-                                        String::from_utf8_lossy(&attr.value).to_string();
-                                }
-                                _ => {}
+            Ok(Event::Start(ref e)) => match e.name().as_ref() {
+                b"manifest" => in_manifest = true,
+                b"spine" => in_spine = true,
+                b"item" if in_manifest => {
+                    current_item_id.clear();
+                    current_item_href.clear();
+                    current_item_media.clear();
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"id" => {
+                                current_item_id = String::from_utf8_lossy(&attr.value).to_string();
                             }
+                            b"href" => {
+                                current_item_href =
+                                    String::from_utf8_lossy(&attr.value).to_string();
+                            }
+                            b"media-type" => {
+                                current_item_media =
+                                    String::from_utf8_lossy(&attr.value).to_string();
+                            }
+                            _ => {}
                         }
                     }
-                    b"itemref" if in_spine => {
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"idref" {
-                                let idref = String::from_utf8_lossy(&attr.value).to_string();
-                                spine.push(idref);
-                            }
+                }
+                b"itemref" if in_spine => {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"idref" {
+                            let idref = String::from_utf8_lossy(&attr.value).to_string();
+                            spine.push(idref);
                         }
                     }
-                    _ => {}
                 }
-            }
-            Ok(Event::End(ref e)) => {
-                match e.name().as_ref() {
-                    b"item" if in_manifest && !current_item_id.is_empty() => {
-                        manifest.insert(
-                            current_item_id.clone(),
-                            (current_item_href.clone(), current_item_media.clone()),
-                        );
-                    }
-                    b"manifest" => in_manifest = false,
-                    b"spine" => in_spine = false,
-                    _ => {}
+                _ => {}
+            },
+            Ok(Event::End(ref e)) => match e.name().as_ref() {
+                b"item" if in_manifest && !current_item_id.is_empty() => {
+                    manifest.insert(
+                        current_item_id.clone(),
+                        (current_item_href.clone(), current_item_media.clone()),
+                    );
                 }
-            }
+                b"manifest" => in_manifest = false,
+                b"spine" => in_spine = false,
+                _ => {}
+            },
             Ok(Event::Eof) => break,
             Err(_) => break,
             _ => continue,
@@ -208,17 +203,16 @@ fn normalize_path(base: &str, relative: &str) -> String {
 }
 
 #[tauri::command]
-fn open_epub_file(
-    state: State<'_, Mutex<EpubState>>,
-    path: String,
-) -> Result<EpubImages, String> {
+fn open_epub_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<EpubImages, String> {
     let file_path = std::path::PathBuf::from(&path);
 
     let path = file_path;
 
     let mut epub_file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
     let mut buffer = Vec::new();
-    epub_file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+    epub_file
+        .read_to_end(&mut buffer)
+        .map_err(|e| e.to_string())?;
 
     let cursor = std::io::Cursor::new(buffer);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
@@ -240,14 +234,18 @@ fn open_epub_file(
 
         loop {
             match reader.read_event() {
-                Ok(Event::Start(ref e)) if e.name().as_ref() == b"rootfile" => {
-                    for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"full-path" {
-                            opf_path = String::from_utf8_lossy(&attr.value).to_string();
-                            break;
+                Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                    if e.name().as_ref() == b"rootfile" {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"full-path" {
+                                opf_path = String::from_utf8_lossy(&attr.value).to_string();
+                                break;
+                            }
                         }
                     }
-                    break;
+                    if !opf_path.is_empty() {
+                        break;
+                    }
                 }
                 Ok(Event::Eof) => break,
                 Err(_) => break,
@@ -343,10 +341,7 @@ fn open_epub_file(
 }
 
 #[tauri::command]
-fn get_image_data(
-    state: State<'_, Mutex<EpubState>>,
-    href: String,
-) -> Result<String, String> {
+fn get_image_data(state: State<'_, Mutex<EpubState>>, href: String) -> Result<String, String> {
     let state = state.lock().unwrap();
     let path = state
         .file_path
@@ -357,14 +352,17 @@ fn get_image_data(
 
     let mut epub_file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
     let mut buffer = Vec::new();
-    epub_file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+    epub_file
+        .read_to_end(&mut buffer)
+        .map_err(|e| e.to_string())?;
 
     let cursor = std::io::Cursor::new(buffer);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
 
     let mut file = archive.by_name(&href).map_err(|e| e.to_string())?;
     let mut image_data = Vec::new();
-    file.read_to_end(&mut image_data).map_err(|e| e.to_string())?;
+    file.read_to_end(&mut image_data)
+        .map_err(|e| e.to_string())?;
 
     let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &image_data);
 
@@ -406,7 +404,11 @@ fn get_next_file(path: String) -> Option<String> {
             if !entry_path.is_file() {
                 continue;
             }
-            if entry_path.extension().map(|e| e.to_string_lossy().to_lowercase()) != Some(extension.clone()) {
+            if entry_path
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                != Some(extension.clone())
+            {
                 continue;
             }
             let entry_stem = entry_path.file_stem()?.to_string_lossy().to_string();
@@ -446,7 +448,11 @@ fn get_prev_file(path: String) -> Option<String> {
             if !entry_path.is_file() {
                 continue;
             }
-            if entry_path.extension().map(|e| e.to_string_lossy().to_lowercase()) != Some(extension.clone()) {
+            if entry_path
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                != Some(extension.clone())
+            {
                 continue;
             }
             let entry_stem = entry_path.file_stem()?.to_string_lossy().to_string();
@@ -470,20 +476,21 @@ fn get_prev_file(path: String) -> Option<String> {
 }
 
 #[tauri::command]
-fn open_cbz_file(
-    state: State<'_, Mutex<EpubState>>,
-    path: String,
-) -> Result<EpubImages, String> {
+fn open_cbz_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<EpubImages, String> {
     let file_path = std::path::PathBuf::from(&path);
 
     let mut epub_file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
     let mut buffer = Vec::new();
-    epub_file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+    epub_file
+        .read_to_end(&mut buffer)
+        .map_err(|e| e.to_string())?;
 
     let cursor = std::io::Cursor::new(buffer);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
 
-    let image_extensions = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "tiff", "tif"];
+    let image_extensions = [
+        "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "tiff", "tif",
+    ];
     let mut images: Vec<ImageInfo> = Vec::new();
 
     for i in 0..archive.len() {
@@ -543,8 +550,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            use tauri::Manager;
             use tauri::Emitter;
+            use tauri::Manager;
             if let Some(path) = find_file_in_args(argv.iter().cloned()) {
                 let state = app.state::<Mutex<EpubState>>();
                 let mut state = state.inner().lock().unwrap();
@@ -579,9 +586,12 @@ fn find_file_in_args(args: impl Iterator<Item = String>) -> Option<String> {
             let ext = ext.to_string_lossy().to_lowercase();
             if matches!(ext.as_ref(), "epub" | "cbz") {
                 let decoded = percent_encoding::percent_decode_str(&arg).decode_utf8_lossy();
-                return Some(decoded.strip_prefix("file://")
-                    .unwrap_or(&decoded)
-                    .to_string());
+                return Some(
+                    decoded
+                        .strip_prefix("file://")
+                        .unwrap_or(&decoded)
+                        .to_string(),
+                );
             }
         }
     }

@@ -31,13 +31,28 @@
     ],
     "fileAssociations": [
       {
-        "name": "Manga Viewer Document",
+        "name": "Comic Book ZIP Archive",
         "ext": [
-          "cbz",
+          "cbz"
+        ],
+        "role": "Viewer",
+        "rank": "Owner",
+        "mimeType": "application/vnd.comicbook+zip",
+        "exportedType": {
+          "identifier": "com.philip-bonev.manga-viewer",
+          "conformsTo": [
+            "public.zip-archive"
+          ]
+        }
+      },
+      {
+        "name": "EPUB Book",
+        "ext": [
           "epub"
         ],
         "role": "Viewer",
-        "rank": "Owner"
+        "rank": "Owner",
+        "mimeType": "application/epub+zip"
       }
     ]
   }
