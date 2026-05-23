@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "manga-viewer",
+  "productName": "Manga Viewer",
   "version": "0.1.0",
-  "identifier": "com.manga-viewer.app",
+  "identifier": "com.philip-bonev.manga-viewer",
   "build": {
     "frontendDist": "../src"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "manga-viewer",
+        "title": "Manga Viewer",
         "width": 800,
         "height": 600
       }
@@ -36,7 +36,7 @@
           "cbz",
           "epub"
         ],
-        "role": "Editor",
+        "role": "Viewer",
         "rank": "Owner"
       }
     ]
