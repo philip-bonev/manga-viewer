@@ -266,8 +266,28 @@ fn open_epub_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<Ep
         .read_to_string(&mut opf_content)
         .map_err(|e| e.to_string())?;
 
-    let base_path = resolve_base_path(&opf_content);
+    let opf_dir = std::path::Path::new(&opf_path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+
+    let xml_base = resolve_base_path(&opf_content);
     let (manifest, spine) = parse_opf(&opf_content);
+
+    let resolve = |href: &str| -> String {
+        let href = if xml_base.is_empty() {
+            href.to_string()
+        } else {
+            format!("{}/{}", xml_base, href)
+        };
+        if opf_dir.is_empty() {
+            href
+        } else {
+            format!("{}/{}", opf_dir, href)
+        }
+    };
 
     let mut all_images: Vec<ImageInfo> = Vec::new();
     let mut seen_hrefs: HashMap<String, usize> = HashMap::new();
@@ -275,27 +295,18 @@ fn open_epub_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<Ep
     for item_id in &spine {
         if let Some((href, media_type)) = manifest.get(item_id) {
             if media_type.starts_with("text/") || media_type.contains("html") {
-                let full_href = if base_path.is_empty() {
-                    href.clone()
-                } else {
-                    format!("{}/{}", base_path, href)
-                };
+                let full_href = resolve(href);
 
                 if let Ok(mut file) = archive.by_name(&full_href) {
                     let mut html_content = String::new();
                     if file.read_to_string(&mut html_content).is_ok() {
                         let img_hrefs =
-                            extract_images_from_html(&html_content, &base_path, &manifest);
+                            extract_images_from_html(&html_content, &xml_base, &manifest);
                         for img_href in img_hrefs {
                             let normalized = normalize_path(&full_href, &img_href);
                             if let Some((_, (_, mime_type))) =
                                 manifest.iter().find(|(_, (h, _))| {
-                                    let full_h = if base_path.is_empty() {
-                                        h.clone()
-                                    } else {
-                                        format!("{}/{}", base_path, h)
-                                    };
-                                    full_h == normalized || h == &img_href
+                                    resolve(h) == normalized || h == &img_href
                                 })
                             {
                                 let mime = mime_type.clone();
@@ -318,14 +329,9 @@ fn open_epub_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<Ep
     if all_images.is_empty() {
         for (id, (href, media_type)) in &manifest {
             if media_type.starts_with("image/") {
-                let full_href = if base_path.is_empty() {
-                    href.clone()
-                } else {
-                    format!("{}/{}", base_path, href)
-                };
                 all_images.push(ImageInfo {
                     id: id.clone(),
-                    href: full_href,
+                    href: resolve(href),
                     mime_type: media_type.clone(),
                 });
             }
@@ -537,15 +543,15 @@ fn open_cbz_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<Epu
 
 #[tauri::command]
 fn get_cli_file(state: State<'_, Mutex<EpubState>>) -> Option<String> {
-    let state = state.lock().unwrap();
-    state.cli_file.clone()
+    let mut state = state.lock().unwrap();
+    state.cli_file.take()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let cli_file = find_file_in_args(std::env::args().skip(1));
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -572,8 +578,31 @@ pub fn run() {
             get_next_file,
             get_prev_file
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Opened { urls } = event {
+            use tauri::Emitter;
+            use tauri::Manager;
+            for url in urls {
+                if url.scheme() == "file" {
+                    if let Ok(path) = url.to_file_path() {
+                        if let Some(ext) = path.extension() {
+                            let ext = ext.to_string_lossy().to_lowercase();
+                            if ext == "cbz" || ext == "epub" {
+                                let path_str = path.to_string_lossy().to_string();
+                                let state = app_handle.state::<Mutex<EpubState>>();
+                                let mut state = state.inner().lock().unwrap();
+                                state.cli_file = Some(path_str.clone());
+                                let _ = app_handle.emit("file-opened", path_str);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn find_file_in_args(args: impl Iterator<Item = String>) -> Option<String> {
