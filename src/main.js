@@ -209,7 +209,11 @@ async function openFileByPath(filePath) {
   showLoading();
   try {
     const ext = filePath.split('.').pop().toLowerCase();
-    const command = ext === 'cbz' ? 'open_cbz_file' : 'open_epub_file';
+    const command =
+      ext === 'cbz' ? 'open_cbz_file' :
+      ext === 'cbt' ? 'open_cbt_file' :
+      ext === 'cb7' ? 'open_cb7_file' :
+      'open_epub_file';
     const result = await invoke(command, { path: filePath });
     if (result.images && result.images.length > 0) {
       currentFilePath = filePath;
@@ -242,7 +246,7 @@ async function openFile() {
     const { open } = window.__TAURI__.dialog;
     const selected = await open({
       filters: [
-        { name: 'Comic Files', extensions: ['epub', 'cbz'] }
+        { name: 'Comic Files', extensions: ['epub', 'cbz', 'cbt', 'cb7'] }
       ]
     });
 

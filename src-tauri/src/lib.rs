@@ -5,10 +5,22 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
 
-pub struct EpubState {
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum ArchiveFormat {
+    Zip,
+    Tar,
+    SevenZ,
+}
+
+pub(crate) struct EpubState {
     pub file_path: Option<PathBuf>,
     pub cli_file: Option<String>,
+    pub archive_format: Option<ArchiveFormat>,
 }
+
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "tiff", "tif",
+];
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ImageInfo {
@@ -341,9 +353,103 @@ fn open_epub_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<Ep
     {
         let mut state = state.lock().unwrap();
         state.file_path = Some(path);
+        state.archive_format = Some(ArchiveFormat::Zip);
     }
 
     Ok(EpubImages { images: all_images })
+}
+
+fn read_zip_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> {
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+    let cursor = std::io::Cursor::new(buffer);
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
+    let mut entry = archive.by_name(href).map_err(|e| e.to_string())?;
+    let mut data = Vec::new();
+    entry.read_to_end(&mut data).map_err(|e| e.to_string())?;
+    Ok(data)
+}
+
+fn read_tar_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> {
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let reader = std::io::BufReader::new(file);
+    let mut archive = tar::Archive::new(reader);
+    for entry in archive.entries().map_err(|e| e.to_string())? {
+        let mut entry = entry.map_err(|e| e.to_string())?;
+        let entry_path = entry.path().map_err(|e| e.to_string())?.to_string_lossy().to_string();
+        if entry_path == href {
+            let mut data = Vec::new();
+            entry.read_to_end(&mut data).map_err(|e| e.to_string())?;
+            return Ok(data);
+        }
+    }
+    Err(format!("Entry '{}' not found in archive", href))
+}
+
+fn read_7z_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> {
+    let mut archive = sevenz_rust::SevenZReader::open(
+        path.to_string_lossy().as_ref(),
+        "".into(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let mut result: Option<Vec<u8>> = None;
+    archive
+        .for_each_entries(|entry, reader| {
+            if entry.name() == href {
+                let mut data = Vec::new();
+                if std::io::Read::read_to_end(reader, &mut data).is_ok() {
+                    result = Some(data);
+                }
+                Ok(false)
+            } else {
+                Ok(true)
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+    result.ok_or_else(|| format!("Entry '{}' not found in archive", href))
+}
+
+fn mime_from_ext(ext: &str) -> &str {
+    match ext {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "tiff" | "tif" => "image/tiff",
+        _ => "image/jpeg",
+    }
+}
+
+fn collect_images(
+    entries: impl Iterator<Item = (String, String)>,
+) -> Vec<ImageInfo> {
+    let mut images: Vec<ImageInfo> = entries
+        .filter(|(name, _)| {
+            let ext = name.split('.').last().unwrap_or("").to_lowercase();
+            IMAGE_EXTENSIONS.contains(&ext.as_str())
+        })
+        .map(|(name, _)| {
+            let ext = name.split('.').last().unwrap_or("").to_lowercase();
+            ImageInfo {
+                id: String::new(),
+                href: name,
+                mime_type: mime_from_ext(&ext).to_string(),
+            }
+        })
+        .collect();
+
+    images.sort_by(|a, b| a.href.cmp(&b.href));
+
+    for (i, img) in images.iter_mut().enumerate() {
+        img.id = format!("{:05}", i);
+    }
+
+    images
 }
 
 #[tauri::command]
@@ -352,26 +458,18 @@ fn get_image_data(state: State<'_, Mutex<EpubState>>, href: String) -> Result<St
     let path = state
         .file_path
         .as_ref()
-        .ok_or("No EPUB file opened")?
+        .ok_or("No file opened")?
         .clone();
+    let fmt = state.archive_format.unwrap_or(ArchiveFormat::Zip);
     drop(state);
 
-    let mut epub_file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    let mut buffer = Vec::new();
-    epub_file
-        .read_to_end(&mut buffer)
-        .map_err(|e| e.to_string())?;
-
-    let cursor = std::io::Cursor::new(buffer);
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
-
-    let mut file = archive.by_name(&href).map_err(|e| e.to_string())?;
-    let mut image_data = Vec::new();
-    file.read_to_end(&mut image_data)
-        .map_err(|e| e.to_string())?;
+    let image_data = match fmt {
+        ArchiveFormat::Zip => read_zip_entry(&path, &href)?,
+        ArchiveFormat::Tar => read_tar_entry(&path, &href)?,
+        ArchiveFormat::SevenZ => read_7z_entry(&path, &href)?,
+    };
 
     let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &image_data);
-
     Ok(encoded)
 }
 
@@ -379,6 +477,7 @@ fn get_image_data(state: State<'_, Mutex<EpubState>>, href: String) -> Result<St
 fn close_epub(state: State<'_, Mutex<EpubState>>) -> Result<(), String> {
     let mut state = state.lock().unwrap();
     state.file_path = None;
+    state.archive_format = None;
     Ok(())
 }
 
@@ -485,57 +584,108 @@ fn get_prev_file(path: String) -> Option<String> {
 fn open_cbz_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<EpubImages, String> {
     let file_path = std::path::PathBuf::from(&path);
 
-    let mut epub_file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
+    let mut file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
     let mut buffer = Vec::new();
-    epub_file
-        .read_to_end(&mut buffer)
-        .map_err(|e| e.to_string())?;
-
+    file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
     let cursor = std::io::Cursor::new(buffer);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
 
-    let image_extensions = [
-        "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "tiff", "tif",
-    ];
-    let mut images: Vec<ImageInfo> = Vec::new();
-
-    for i in 0..archive.len() {
-        let file = archive.by_index(i).map_err(|e| e.to_string())?;
+    let entries = (0..archive.len()).filter_map(|i| {
+        let file = archive.by_index(i).ok()?;
         let name = file.name().to_string();
-
         if name.starts_with("__MACOSX") || name.ends_with('/') {
-            continue;
+            return None;
         }
-
         let ext = name.split('.').last().unwrap_or("").to_lowercase();
-        if image_extensions.contains(&ext.as_str()) {
-            let mime = match ext.as_str() {
-                "jpg" | "jpeg" => "image/jpeg",
-                "png" => "image/png",
-                "gif" => "image/gif",
-                "webp" => "image/webp",
-                "bmp" => "image/bmp",
-                "svg" => "image/svg+xml",
-                "tiff" | "tif" => "image/tiff",
-                _ => "image/jpeg",
-            };
-            images.push(ImageInfo {
-                id: format!("{:05}", i),
-                href: name,
-                mime_type: mime.to_string(),
-            });
+        if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+            Some((name, ext))
+        } else {
+            None
         }
-    }
+    });
 
-    images.sort_by(|a, b| a.href.cmp(&b.href));
-
-    for (i, img) in images.iter_mut().enumerate() {
-        img.id = format!("{:05}", i);
-    }
+    let images = collect_images(entries);
 
     {
         let mut state = state.lock().unwrap();
         state.file_path = Some(file_path);
+        state.archive_format = Some(ArchiveFormat::Zip);
+    }
+
+    Ok(EpubImages { images })
+}
+
+#[tauri::command]
+fn open_cbt_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<EpubImages, String> {
+    let file_path = std::path::PathBuf::from(&path);
+
+    let file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
+    let reader = std::io::BufReader::new(file);
+    let mut archive = tar::Archive::new(reader);
+
+    let entries = archive.entries().map_err(|e| e.to_string())?;
+    let names: Vec<(String, String)> = entries
+        .filter_map(|e| {
+            let entry = e.ok()?;
+            let path = entry.path().ok()?;
+            let name = path.to_string_lossy().to_string();
+            if name.ends_with('/') {
+                return None;
+            }
+            let ext = name.split('.').last().unwrap_or("").to_lowercase();
+            if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+                Some((name, ext))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let images = collect_images(names.into_iter());
+
+    {
+        let mut state = state.lock().unwrap();
+        state.file_path = Some(file_path);
+        state.archive_format = Some(ArchiveFormat::Tar);
+    }
+
+    Ok(EpubImages { images })
+}
+
+#[tauri::command]
+fn open_cb7_file(state: State<'_, Mutex<EpubState>>, path: String) -> Result<EpubImages, String> {
+    let file_path = std::path::PathBuf::from(&path);
+
+    let reader = sevenz_rust::SevenZReader::open(
+        file_path.to_string_lossy().as_ref(),
+        "".into(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let entries: Vec<(String, String)> = reader
+        .archive()
+        .files
+        .iter()
+        .filter_map(|entry| {
+            let name = entry.name().to_string();
+            if entry.is_directory() {
+                return None;
+            }
+            let ext = name.split('.').last().unwrap_or("").to_lowercase();
+            if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+                Some((name, ext))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let images = collect_images(entries.into_iter());
+
+    {
+        let mut state = state.lock().unwrap();
+        state.file_path = Some(file_path);
+        state.archive_format = Some(ArchiveFormat::SevenZ);
     }
 
     Ok(EpubImages { images })
@@ -568,10 +718,13 @@ pub fn run() {
         .manage(Mutex::new(EpubState {
             file_path: None,
             cli_file,
+            archive_format: None,
         }))
         .invoke_handler(tauri::generate_handler![
             open_epub_file,
             open_cbz_file,
+            open_cbt_file,
+            open_cb7_file,
             get_image_data,
             close_epub,
             get_cli_file,
@@ -590,7 +743,7 @@ pub fn run() {
                     if let Ok(path) = url.to_file_path() {
                         if let Some(ext) = path.extension() {
                             let ext = ext.to_string_lossy().to_lowercase();
-                            if ext == "cbz" || ext == "epub" {
+                            if matches!(ext.as_ref(), "epub" | "cbz" | "cbt" | "cb7") {
                                 let path_str = path.to_string_lossy().to_string();
                                 let state = app_handle.state::<Mutex<EpubState>>();
                                 let mut state = state.inner().lock().unwrap();
@@ -613,7 +766,7 @@ fn find_file_in_args(args: impl Iterator<Item = String>) -> Option<String> {
         let path = std::path::Path::new(&arg);
         if let Some(ext) = path.extension() {
             let ext = ext.to_string_lossy().to_lowercase();
-            if matches!(ext.as_ref(), "epub" | "cbz") {
+            if matches!(ext.as_ref(), "epub" | "cbz" | "cbt" | "cb7") {
                 let decoded = percent_encoding::percent_decode_str(&arg).decode_utf8_lossy();
                 return Some(
                     decoded

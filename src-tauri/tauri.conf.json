@@ -46,6 +46,18 @@
         }
       },
       {
+        "name": "Comic Book TAR Archive",
+        "ext": ["cbt"],
+        "role": "Viewer",
+        "mimeType": "application/x-tar"
+      },
+      {
+        "name": "Comic Book 7z Archive",
+        "ext": ["cb7"],
+        "role": "Viewer",
+        "mimeType": "application/x-7z-compressed"
+      },
+      {
         "name": "EPUB Book",
         "ext": [
           "epub"
