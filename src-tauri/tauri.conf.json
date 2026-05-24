@@ -70,9 +70,7 @@
     "linux": {
       "deb": {
         "depends": []
-      },
-      "rpm": null,
-      "appimage": null
+      }
     }
   }
 }
