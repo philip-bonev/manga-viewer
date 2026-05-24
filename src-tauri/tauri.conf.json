@@ -32,17 +32,13 @@
     "fileAssociations": [
       {
         "name": "Comic Book ZIP Archive",
-        "ext": [
-          "cbz"
-        ],
+        "ext": ["cbz"],
         "role": "Viewer",
         "rank": "Owner",
         "mimeType": "application/vnd.comicbook+zip",
         "exportedType": {
           "identifier": "com.philip-bonev.manga-viewer",
-          "conformsTo": [
-            "public.zip-archive"
-          ]
+          "conformsTo": ["public.zip-archive"]
         }
       },
       {
@@ -59,13 +55,24 @@
       },
       {
         "name": "EPUB Book",
-        "ext": [
-          "epub"
-        ],
+        "ext": ["epub"],
         "role": "Viewer",
         "rank": "Owner",
         "mimeType": "application/epub+zip"
       }
-    ]
+    ],
+    "windows": {
+      "wix": null,
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      },
+      "rpm": null,
+      "appimage": null
+    }
   }
 }

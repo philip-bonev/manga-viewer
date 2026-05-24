@@ -760,7 +760,11 @@ pub fn run() {
 
 fn find_file_in_args(args: impl Iterator<Item = String>) -> Option<String> {
     for arg in args {
-        if arg.starts_with("-psn_") || arg.starts_with("-") {
+        #[cfg(target_os = "macos")]
+        if arg.starts_with("-psn_") {
+            continue;
+        }
+        if arg.starts_with("-") {
             continue;
         }
         let path = std::path::Path::new(&arg);
