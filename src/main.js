@@ -161,8 +161,8 @@ function disableZoomControls() {
   zoomFitBtn.disabled = true;
 }
 
-async function displayImages(epubImages) {
-  images = epubImages.images;
+async function displayImages(archiveImages) {
+  images = archiveImages.images;
   loadedImageCount = 0;
 
   if (images.length === 0) {
@@ -213,11 +213,14 @@ async function openFileByPath(filePath) {
       ext === 'cbz' ? 'open_cbz_file' :
       ext === 'cbt' ? 'open_cbt_file' :
       ext === 'cb7' ? 'open_cb7_file' :
-      'open_epub_file';
+      null;
+    if (!command) {
+      throw new Error(`Unsupported file format: .${ext}`);
+    }
     const result = await invoke(command, { path: filePath });
     if (result.images && result.images.length > 0) {
       currentFilePath = filePath;
-      const displayName = filePath.split('/').pop() || filePath.split('\\').pop() || 'EPUB';
+      const displayName = filePath.split('/').pop() || filePath.split('\\').pop() || 'Unknown';
       updateFileName(displayName);
       closeBtn.disabled = false;
       enableZoomControls();
@@ -246,7 +249,7 @@ async function openFile() {
     const { open } = window.__TAURI__.dialog;
     const selected = await open({
       filters: [
-        { name: 'Comic Files', extensions: ['epub', 'cbz', 'cbt', 'cb7'] }
+        { name: 'Comic Files', extensions: ['cbz', 'cbt', 'cb7'] }
       ]
     });
 
@@ -269,7 +272,7 @@ async function openFile() {
 
 async function closeFile() {
   try {
-    await invoke('close_epub');
+    await invoke('close_file');
     currentFilePath = null;
     images = [];
     loadedImageCount = 0;

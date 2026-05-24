@@ -1,6 +1,6 @@
 [package]
 name = "manga-viewer"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -21,7 +21,6 @@ tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zip = "2"
-quick-xml = "0.37"
 base64 = "0.22"
 regex = "1"
 percent-encoding = "2"
