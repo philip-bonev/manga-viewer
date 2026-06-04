@@ -78,6 +78,9 @@ fn read_7z_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> 
                 }
                 Ok(false)
             } else {
+                // Must consume entry data to advance the decoder
+                // (required for solid 7z archives where data is interleaved)
+                let _ = std::io::copy(reader, &mut std::io::sink());
                 Ok(true)
             }
         })
