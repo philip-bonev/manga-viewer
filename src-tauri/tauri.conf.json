@@ -35,9 +35,6 @@
         "ext": [
           "cbz"
         ],
-        "contentTypes": [
-          "com.macitbetter.cbz-archive"
-        ],
         "role": "Viewer",
         "rank": "Owner",
         "mimeType": "application/x-cbz"
@@ -47,9 +44,6 @@
         "ext": [
           "cbt"
         ],
-        "contentTypes": [
-          "com.macitbetter.cbt-archive"
-        ],
         "role": "Viewer",
         "rank": "Owner",
         "mimeType": "application/x-cbt"
@@ -58,9 +52,6 @@
         "name": "Comic Book 7z Archive",
         "ext": [
           "cb7"
-        ],
-        "contentTypes": [
-          "org.7-zip.7z"
         ],
         "role": "Viewer",
         "rank": "Owner",
