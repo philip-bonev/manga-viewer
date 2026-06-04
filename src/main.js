@@ -270,22 +270,11 @@ async function openFile() {
   }
 }
 
-async function closeFile() {
+async function closeApp() {
   try {
-    await invoke('close_file');
-    currentFilePath = null;
-    images = [];
-    loadedImageCount = 0;
-    zoomLevel = 100;
-    applyZoom();
-    showPlaceholder();
-    updateFileName('No file opened');
-    closeBtn.disabled = true;
-    prevBtn.disabled = true;
-    nextBtn.disabled = true;
-    disableZoomControls();
+    await invoke('exit_app');
   } catch (error) {
-    console.error('Failed to close file:', error);
+    console.error('Failed to close app:', error);
   }
 }
 
@@ -308,7 +297,7 @@ async function openPrevFile() {
 openBtn.addEventListener('click', openFile);
 prevBtn.addEventListener('click', openPrevFile);
 nextBtn.addEventListener('click', openNextFile);
-closeBtn.addEventListener('click', closeFile);
+closeBtn.addEventListener('click', closeApp);
 zoomInBtn.addEventListener('click', zoomIn);
 zoomOutBtn.addEventListener('click', zoomOut);
 zoomFitBtn.addEventListener('click', zoomFit);

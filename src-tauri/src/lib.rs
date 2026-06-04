@@ -158,6 +158,12 @@ fn close_file(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
+    app.exit(0);
+    Ok(())
+}
+
 fn extract_series_info(file_stem: &str) -> Option<(String, f64)> {
     let re = regex::Regex::new(r"^(.*?)[-_ ](\d+(?:\.\d+)?)").ok()?;
     let captures = re.captures(file_stem)?;
@@ -403,6 +409,7 @@ pub fn run() {
             open_cb7_file,
             get_image_data,
             close_file,
+            exit_app,
             get_cli_file,
             get_next_file,
             get_prev_file
