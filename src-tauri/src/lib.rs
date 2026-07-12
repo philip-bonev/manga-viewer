@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::Manager;
 use tauri::State;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -51,7 +52,11 @@ fn read_tar_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String>
     let mut archive = tar::Archive::new(reader);
     for entry in archive.entries().map_err(|e| e.to_string())? {
         let mut entry = entry.map_err(|e| e.to_string())?;
-        let entry_path = entry.path().map_err(|e| e.to_string())?.to_string_lossy().to_string();
+        let entry_path = entry
+            .path()
+            .map_err(|e| e.to_string())?
+            .to_string_lossy()
+            .to_string();
         if entry_path == href {
             let mut data = Vec::new();
             entry.read_to_end(&mut data).map_err(|e| e.to_string())?;
@@ -62,11 +67,8 @@ fn read_tar_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String>
 }
 
 fn read_7z_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> {
-    let mut archive = sevenz_rust::SevenZReader::open(
-        path.to_string_lossy().as_ref(),
-        "".into(),
-    )
-    .map_err(|e| e.to_string())?;
+    let mut archive = sevenz_rust::SevenZReader::open(path.to_string_lossy().as_ref(), "".into())
+        .map_err(|e| e.to_string())?;
 
     let mut result: Option<Vec<u8>> = None;
     archive
@@ -102,9 +104,7 @@ fn mime_from_ext(ext: &str) -> &str {
     }
 }
 
-fn collect_images(
-    entries: impl Iterator<Item = (String, String)>,
-) -> Vec<ImageInfo> {
+fn collect_images(entries: impl Iterator<Item = (String, String)>) -> Vec<ImageInfo> {
     let mut images: Vec<ImageInfo> = entries
         .filter(|(name, _)| {
             let ext = name.split('.').last().unwrap_or("").to_lowercase();
@@ -132,11 +132,7 @@ fn collect_images(
 #[tauri::command]
 fn get_image_data(state: State<'_, Mutex<AppState>>, href: String) -> Result<String, String> {
     let state = state.lock().unwrap();
-    let path = state
-        .file_path
-        .as_ref()
-        .ok_or("No file opened")?
-        .clone();
+    let path = state.file_path.as_ref().ok_or("No file opened")?.clone();
     let fmt = state.archive_format.unwrap_or(ArchiveFormat::Zip);
     drop(state);
 
@@ -339,11 +335,8 @@ fn open_cbt_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
 fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
     let file_path = std::path::PathBuf::from(&path);
 
-    let reader = sevenz_rust::SevenZReader::open(
-        file_path.to_string_lossy().as_ref(),
-        "".into(),
-    )
-    .map_err(|e| e.to_string())?;
+    let reader = sevenz_rust::SevenZReader::open(file_path.to_string_lossy().as_ref(), "".into())
+        .map_err(|e| e.to_string())?;
 
     let entries: Vec<(String, String)> = reader
         .archive()
@@ -415,6 +408,14 @@ pub fn run() {
             get_next_file,
             get_prev_file
         ])
+        .setup(|app| {
+            // Only automatically open DevTools during debug builds
+            #[cfg(debug_assertions)]
+            if let Some(window) = app.get_webview_window("main") {
+                window.open_devtools();
+            }
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
