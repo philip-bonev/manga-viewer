@@ -3,6 +3,8 @@ name = "manga-viewer"
 version = "1.0.0"
 description = "Manga and Comic viewer."
 authors = ["Philip Bonev"]
+license = "Apache 2.0"
+repository = "https://github.com/philip-bonev/manga-viewer.git"
 edition = "2024"
 
 [lib]
