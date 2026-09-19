@@ -1,6 +1,6 @@
 [package]
 name = "manga-viewer"
-version = "1.0.0"
+version = "1.1.0"
 description = "Manga and Comic viewer."
 authors = ["Philip Bonev"]
 license = "Apache 2.0"
@@ -13,6 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+chrono = "0.4"
 
 [dependencies]
 tauri = { version = "2", features = [] }

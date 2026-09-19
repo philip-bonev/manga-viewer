@@ -18,6 +18,19 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
 
+const LICENSE_TEXT: &str = include_str!("../LICENSE");
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct AppInfo {
+    pub name: String,
+    pub version: String,
+    pub build_date: String,
+    pub author: String,
+    pub license_name: String,
+    pub license_text: String,
+    pub repository: String,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ArchiveFormat {
     Zip,
@@ -140,6 +153,19 @@ fn collect_images(entries: impl Iterator<Item = (String, String)>) -> Vec<ImageI
     }
 
     images
+}
+
+#[tauri::command]
+fn get_app_info() -> AppInfo {
+    AppInfo {
+        name: env!("CARGO_PKG_NAME").to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        build_date: env!("BUILD_DATE").to_string(),
+        author: env!("CARGO_PKG_AUTHORS").to_string(),
+        license_name: "Apache License 2.0".to_string(),
+        license_text: LICENSE_TEXT.to_string(),
+        repository: env!("CARGO_PKG_REPOSITORY").to_string(),
+    }
 }
 
 #[tauri::command]
@@ -411,6 +437,7 @@ pub fn run() {
             archive_format: None,
         }))
         .invoke_handler(tauri::generate_handler![
+            get_app_info,
             open_cbz_file,
             open_cbt_file,
             open_cb7_file,

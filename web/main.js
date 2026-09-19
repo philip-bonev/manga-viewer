@@ -332,6 +332,46 @@ viewerContainer.addEventListener('wheel', (e) => {
   }
 }, { passive: false });
 
+const aboutBtn = document.getElementById('about-btn');
+const aboutDialog = document.getElementById('about-dialog');
+const aboutCloseBtn = document.getElementById('about-close-btn');
+const aboutName = document.getElementById('about-name');
+const aboutVersion = document.getElementById('about-version');
+const aboutBuildDate = document.getElementById('about-build-date');
+const aboutAuthor = document.getElementById('about-author');
+const aboutLicenseName = document.getElementById('about-license-name');
+const aboutRepository = document.getElementById('about-repository');
+const aboutLicenseText = document.getElementById('about-license-text');
+
+async function showAboutDialog() {
+  try {
+    const info = await invoke('get_app_info');
+    aboutName.textContent = info.name;
+    aboutVersion.textContent = info.version;
+    aboutBuildDate.textContent = info.build_date;
+    aboutAuthor.textContent = info.author;
+    aboutLicenseName.textContent = info.license_name;
+    aboutRepository.textContent = info.repository;
+    aboutRepository.href = info.repository;
+    aboutLicenseText.textContent = info.license_text;
+    aboutDialog.classList.remove('hidden');
+  } catch (error) {
+    console.error('Failed to load app info:', error);
+  }
+}
+
+function hideAboutDialog() {
+  aboutDialog.classList.add('hidden');
+}
+
+aboutBtn.addEventListener('click', showAboutDialog);
+aboutCloseBtn.addEventListener('click', hideAboutDialog);
+aboutDialog.addEventListener('click', (e) => {
+  if (e.target === aboutDialog) {
+    hideAboutDialog();
+  }
+});
+
 window.addEventListener('keydown', (e) => {
   if (e.key === '+' || e.key === '=') {
     zoomIn();
@@ -339,6 +379,8 @@ window.addEventListener('keydown', (e) => {
     zoomOut();
   } else if (e.key === '0') {
     zoomFit();
+  } else if (e.key === 'Escape') {
+    hideAboutDialog();
   }
 });
 

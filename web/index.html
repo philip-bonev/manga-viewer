@@ -81,6 +81,14 @@
         </svg>
         Close
       </button>
+      <button id="about-btn" class="toolbar-btn" title="About">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        About
+      </button>
     </div>
 
     <div id="viewer-container">
@@ -101,6 +109,31 @@
 
     <div id="image-counter" class="hidden">
       <span id="current-image">0</span> / <span id="total-images">0</span>
+    </div>
+
+    <div id="about-dialog" class="about-dialog hidden">
+      <div class="about-dialog-content">
+        <div class="about-header">
+          <h1 id="about-name"></h1>
+          <button id="about-close-btn" class="about-close-btn" title="Close">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="about-details">
+          <p><strong>Version:</strong> <span id="about-version"></span></p>
+          <p><strong>Release Date:</strong> <span id="about-build-date"></span></p>
+          <p><strong>Author:</strong> <span id="about-author"></span></p>
+          <p><strong>License:</strong> <span id="about-license-name"></span></p>
+          <p><strong>Repository:</strong> <a id="about-repository" href="#" target="_blank"></a></p>
+        </div>
+        <div class="about-license">
+          <h2>License</h2>
+          <pre id="about-license-text"></pre>
+        </div>
+      </div>
     </div>
   </body>
 </html>

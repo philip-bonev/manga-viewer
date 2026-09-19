@@ -13,5 +13,7 @@
 // limitations under the License.
 
 fn main() {
+    let build_date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    println!("cargo:rustc-env=BUILD_DATE={}", build_date);
     tauri_build::build()
 }
