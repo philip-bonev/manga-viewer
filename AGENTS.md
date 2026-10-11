@@ -39,9 +39,10 @@
 ### Shell PATH
 Always use this PATH when running shell commands in this project:
 ```sh
-export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/Users/fi4o/.cargo/bin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/local/bin:/usr/local/sbin:$PATH"
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.cargo/bin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/local/bin:/usr/local/sbin:$PATH"
 ```
-(It is also appended to `~/.zshrc`, but the session shell may start with a stripped PATH — export it explicitly before commands like `git push` which need `/usr/bin/ssh`.)
+- The `/opt/homebrew/...` entries are **macOS-specific** (Homebrew). On other platforms skip them and rely on the native prefixes (`/usr/local/bin`, `/usr/bin`, `~/.cargo/bin`, …).
+- It is also appended to `~/.zshrc`, but the session shell may start with a stripped PATH — export it explicitly before commands like `git push` which need `/usr/bin/ssh`.
 
 ### Development & Build
 - **Start Development App**: `cargo tauri dev` (DevTools open automatically in debug builds).
