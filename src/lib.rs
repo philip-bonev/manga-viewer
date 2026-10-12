@@ -448,10 +448,10 @@ pub fn run() {
             get_next_file,
             get_prev_file
         ])
-        .setup(|app| {
+        .setup(|_app| {
             // Only automatically open DevTools during debug builds
             #[cfg(debug_assertions)]
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = _app.get_webview_window("main") {
                 window.open_devtools();
             }
             Ok(())
