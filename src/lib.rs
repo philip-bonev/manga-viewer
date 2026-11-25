@@ -241,9 +241,7 @@ fn get_image_data(state: State<'_, Mutex<AppState>>, href: String) -> Result<Str
         .ok_or_else(|| "No file opened".to_string())?;
 
     let image_data = match state.archive.as_mut() {
-        Some(OpenArchive::Zip(archive)) => read_zip_entry(archive, &href)?,
-        Some(OpenArchive::Tar { file, index }) => read_tar_entry(file, index, &href)?,
-        Some(OpenArchive::SevenZ) => read_7z_entry(&path, &href)?,
+        Some(archive) => read_entry(archive, &path, &href)?,
         None => return Err("No file opened".to_string()),
     };
     drop(state);
@@ -337,11 +335,20 @@ fn get_prev_file(path: String) -> Option<String> {
     find_sibling_file(&path, false)
 }
 
-#[tauri::command(async)]
-fn open_cbz_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
-    let file_path = std::path::PathBuf::from(&path);
+fn read_entry(
+    archive: &mut OpenArchive,
+    file_path: &std::path::Path,
+    href: &str,
+) -> Result<Vec<u8>, String> {
+    match archive {
+        OpenArchive::Zip(archive) => read_zip_entry(archive, href),
+        OpenArchive::Tar { file, index } => read_tar_entry(file, index, href),
+        OpenArchive::SevenZ => read_7z_entry(file_path, href),
+    }
+}
 
-    let file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
+fn open_zip(path: &std::path::Path) -> Result<(Vec<ImageInfo>, OpenArchive), String> {
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
 
     let entries = (0..archive.len()).filter_map(|i| {
@@ -353,22 +360,11 @@ fn open_cbz_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
         Some(name)
     });
 
-    let images = collect_images(entries);
-
-    {
-        let mut state = lock_state(&state);
-        state.file_path = Some(file_path);
-        state.archive = Some(OpenArchive::Zip(archive));
-    }
-
-    Ok(ArchiveImages { images })
+    Ok((collect_images(entries), OpenArchive::Zip(archive)))
 }
 
-#[tauri::command(async)]
-fn open_cbt_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
-    let file_path = std::path::PathBuf::from(&path);
-
-    let file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
+fn open_tar(path: &std::path::Path) -> Result<(Vec<ImageInfo>, OpenArchive), String> {
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut archive = tar::Archive::new(file);
 
     let mut index: HashMap<String, (u64, u64)> = HashMap::new();
@@ -393,25 +389,17 @@ fn open_cbt_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
     }
     let file = archive.into_inner();
 
-    let images = collect_images(names.into_iter());
-
-    {
-        let mut state = lock_state(&state);
-        state.file_path = Some(file_path);
-        state.archive = Some(OpenArchive::Tar { file, index });
-    }
-
-    Ok(ArchiveImages { images })
+    Ok((
+        collect_images(names.into_iter()),
+        OpenArchive::Tar { file, index },
+    ))
 }
 
-#[tauri::command(async)]
-fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
-    let file_path = std::path::PathBuf::from(&path);
-
-    let reader = sevenz_rust::SevenZReader::open(file_path.to_string_lossy().as_ref(), "".into())
+fn open_sevenz(path: &std::path::Path) -> Result<(Vec<ImageInfo>, OpenArchive), String> {
+    let reader = sevenz_rust::SevenZReader::open(path.to_string_lossy().as_ref(), "".into())
         .map_err(|e| e.to_string())?;
 
-    let entries: Vec<String> = reader
+    let names: Vec<String> = reader
         .archive()
         .files
         .iter()
@@ -424,12 +412,46 @@ fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
         })
         .collect();
 
-    let images = collect_images(entries.into_iter());
+    Ok((collect_images(names.into_iter()), OpenArchive::SevenZ))
+}
+
+#[tauri::command(async)]
+fn open_cbz_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
+    let file_path = std::path::PathBuf::from(&path);
+    let (images, archive) = open_zip(&file_path)?;
 
     {
         let mut state = lock_state(&state);
         state.file_path = Some(file_path);
-        state.archive = Some(OpenArchive::SevenZ);
+        state.archive = Some(archive);
+    }
+
+    Ok(ArchiveImages { images })
+}
+
+#[tauri::command(async)]
+fn open_cbt_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
+    let file_path = std::path::PathBuf::from(&path);
+    let (images, archive) = open_tar(&file_path)?;
+
+    {
+        let mut state = lock_state(&state);
+        state.file_path = Some(file_path);
+        state.archive = Some(archive);
+    }
+
+    Ok(ArchiveImages { images })
+}
+
+#[tauri::command(async)]
+fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
+    let file_path = std::path::PathBuf::from(&path);
+    let (images, archive) = open_sevenz(&file_path)?;
+
+    {
+        let mut state = lock_state(&state);
+        state.file_path = Some(file_path);
+        state.archive = Some(archive);
     }
 
     Ok(ArchiveImages { images })
