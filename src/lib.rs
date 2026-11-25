@@ -460,17 +460,19 @@ fn find_file_in_args(args: impl Iterator<Item = String>) -> Option<String> {
         if arg.starts_with("-") {
             continue;
         }
-        let path = std::path::Path::new(&arg);
-        if let Some(ext) = path.extension() {
+        let decoded = percent_encoding::percent_decode_str(&arg).decode_utf8_lossy().to_string();
+        let mut path_str = decoded.strip_prefix("file://").unwrap_or(&decoded).to_string();
+        if cfg!(windows) {
+            // "file:///C:/dir/file.cbz" strips to "/C:/dir/file.cbz"; drop the leading slash
+            let bytes = path_str.as_bytes();
+            if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+                path_str = path_str[1..].to_string();
+            }
+        }
+        if let Some(ext) = std::path::Path::new(&path_str).extension() {
             let ext = ext.to_string_lossy().to_lowercase();
-            if matches!(ext.as_ref(), "cbz" | "cbt" | "cb7") {
-                let decoded = percent_encoding::percent_decode_str(&arg).decode_utf8_lossy();
-                return Some(
-                    decoded
-                        .strip_prefix("file://")
-                        .unwrap_or(&decoded)
-                        .to_string(),
-                );
+            if matches!(ext.as_str(), "cbz" | "cbt" | "cb7") {
+                return Some(path_str);
             }
         }
     }
