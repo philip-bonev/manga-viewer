@@ -16,13 +16,14 @@
 const { invoke } = window.__TAURI__.core;
 
 let images = [];
-let loadedImageCount = 0;
 let currentFilePath = null;
 let zoomLevel = 100;
+let loadGeneration = 0;
 const ZOOM_STEP = 25;
 const ZOOM_MIN = 25;
 const ZOOM_MAX = 500;
 const LAZY_LOAD_THRESHOLD = 5;
+const LOAD_CONCURRENCY = 4;
 
 const openBtn = document.getElementById('open-btn');
 const prevBtn = document.getElementById('prev-btn');
@@ -104,38 +105,64 @@ function createImageElement(imageInfo, index) {
 }
 
 async function loadNearbyImages() {
+  const generation = loadGeneration;
   const scrollTop = viewerContainer.scrollTop;
   const viewportHeight = viewerContainer.clientHeight;
-  const viewportBottom = scrollTop + viewportHeight;
+  const viewerTop = viewerContainer.getBoundingClientRect().top;
+  const margin = viewportHeight * LAZY_LOAD_THRESHOLD;
 
   const imgs = imagesContainer.querySelectorAll('img');
+  const pending = [];
 
-  for (let i = 0; i < imgs.length; i++) {
-    const img = imgs[i];
-    if (img.src && !img.dataset.loading) {
+  for (const img of imgs) {
+    if (img.src || img.dataset.loading) {
       continue;
     }
-
     const rect = img.getBoundingClientRect();
-    const imgTop = rect.top + scrollTop;
-    const imgBottom = rect.bottom + scrollTop;
-
+    const imgTop = rect.top - viewerTop + scrollTop;
+    const imgBottom = rect.bottom - viewerTop + scrollTop;
     const isNearViewport = (
-      imgBottom >= (scrollTop - viewportHeight * LAZY_LOAD_THRESHOLD) &&
-      imgTop <= (viewportBottom + viewportHeight * LAZY_LOAD_THRESHOLD)
+      imgBottom >= scrollTop - margin &&
+      imgTop <= scrollTop + viewportHeight + margin
     );
-
-    if (isNearViewport && !img.src && !img.dataset.loading) {
-      img.dataset.loading = 'true';
-      const dataUrl = await loadImageData(img.dataset.href);
-      if (dataUrl) {
-        img.src = dataUrl;
-        loadedImageCount++;
-        updateCounter(loadedImageCount, imgs.length);
-      }
-      delete img.dataset.loading;
+    if (isNearViewport) {
+      pending.push(img);
     }
   }
+
+  for (let i = 0; i < pending.length; i += LOAD_CONCURRENCY) {
+    if (generation !== loadGeneration) {
+      return;
+    }
+    const batch = pending.slice(i, i + LOAD_CONCURRENCY);
+    await Promise.all(batch.map(async (img) => {
+      img.dataset.loading = 'true';
+      const dataUrl = await loadImageData(img.dataset.href);
+      delete img.dataset.loading;
+      if (generation !== loadGeneration) {
+        return;
+      }
+      if (dataUrl) {
+        img.src = dataUrl;
+      }
+    }));
+  }
+}
+
+function updateCurrentPage() {
+  const imgs = imagesContainer.querySelectorAll('img');
+  if (imgs.length === 0) {
+    return;
+  }
+  const viewerTop = viewerContainer.getBoundingClientRect().top;
+  let current = imgs.length;
+  for (let i = 0; i < imgs.length; i++) {
+    if (imgs[i].getBoundingClientRect().bottom > viewerTop) {
+      current = i + 1;
+      break;
+    }
+  }
+  updateCounter(current, imgs.length);
 }
 
 function applyZoom() {
@@ -189,7 +216,7 @@ function disableZoomControls() {
 
 async function displayImages(archiveImages) {
   images = archiveImages.images;
-  loadedImageCount = 0;
+  loadGeneration++;
 
   if (images.length === 0) {
     showPlaceholder();
@@ -205,13 +232,13 @@ async function displayImages(archiveImages) {
     imagesContainer.appendChild(img);
   }
 
-  updateCounter(0, images.length);
   imageCounter.classList.remove('hidden');
 
   viewerContainer.scrollTop = 0;
 
   zoomLevel = 100;
   applyZoom();
+  updateCurrentPage();
 
   await loadNearbyImages();
   hideLoading();
@@ -301,7 +328,7 @@ async function closeFile() {
     await invoke('close_file');
     currentFilePath = null;
     images = [];
-    loadedImageCount = 0;
+    loadGeneration++;
     zoomLevel = 100;
     applyZoom();
     updateFileName('No file opened');
@@ -338,8 +365,16 @@ zoomInBtn.addEventListener('click', zoomIn);
 zoomOutBtn.addEventListener('click', zoomOut);
 zoomFitBtn.addEventListener('click', zoomFit);
 
+let scrollRaf = 0;
 viewerContainer.addEventListener('scroll', () => {
-  loadNearbyImages();
+  if (scrollRaf) {
+    return;
+  }
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0;
+    loadNearbyImages();
+    updateCurrentPage();
+  });
 });
 
 viewerContainer.addEventListener('wheel', (e) => {
