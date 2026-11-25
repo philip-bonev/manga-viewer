@@ -92,8 +92,8 @@ html, body {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-wrap: break-word;
+  white-space: pre;
+  overflow-x: auto;
   background-color: var(--bg-secondary);
   padding: 16px;
   border-radius: 8px;
