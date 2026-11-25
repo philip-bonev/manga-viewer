@@ -177,10 +177,9 @@ body.drag-over::after {
 }
 
 #images-container img {
-  max-width: 100%;
+  width: 100%;
   height: auto;
   display: block;
-  object-fit: contain;
   background-color: #000;
 }
 
