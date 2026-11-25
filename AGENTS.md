@@ -75,4 +75,4 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.cargo/bin:/usr/bin:/usr
 - **UI Chrome**: keep the interface minimal (single toolbar); About lives in the app menu and opens in a separate window. CSS transitions only for the drag-over highlight.
 - **Threading**: heavy commands (`open_*`, `get_image_data`) use `#[tauri::command(async)]` so they run off the UI thread; if you add more heavy work (conversion, large-archive scans), do the same rather than blocking the UI thread.
 - **No dependencies without need**: only add crates to `Cargo.toml` when required; the current dependency set is deliberately small (serde, zip, tar, sevenz-rust, base64, regex, percent-encoding + Tauri plugins).
-- **Conventions**: lowercase, short git commit messages; Apache-2.0 headers on new source files; keep the frontend dependency-free.
+- **Conventions**: lowercase, short git commit messages; Apache-2.0 headers on new source files; keep the frontend dependency-free. Versioning is X.Y.Z (X = major updates, Y = minor updates, Z = bug fixes), tagged as `vX.Y.Z`.
