@@ -194,7 +194,10 @@ fn close_file(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
 }
 
 fn extract_series_info(file_stem: &str) -> Option<(String, f64)> {
-    let re = regex::Regex::new(r"^(.*?)[-_ ](\d+(?:\.\d+)?)").ok()?;
+    static SERIES_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = SERIES_RE.get_or_init(|| {
+        regex::Regex::new(r"^(.*?)[-_ ](\d+(?:\.\d+)?)").expect("static series regex is valid")
+    });
     let captures = re.captures(file_stem)?;
     let series = captures.get(1)?.as_str().trim().to_lowercase();
     let num: f64 = captures.get(2)?.as_str().parse().ok()?;
@@ -204,12 +207,11 @@ fn extract_series_info(file_stem: &str) -> Option<(String, f64)> {
     Some((series, num))
 }
 
-#[tauri::command]
-fn get_next_file(path: String) -> Option<String> {
-    let file_path = std::path::PathBuf::from(&path);
+fn find_sibling_file(path: &str, forward: bool) -> Option<String> {
+    let file_path = std::path::PathBuf::from(path);
     let parent = file_path.parent()?;
     let file_name = file_path.file_stem()?.to_string_lossy().to_string();
-    let extension = file_path.extension()?.to_string_lossy().to_string();
+    let extension = file_path.extension()?.to_string_lossy().to_lowercase();
 
     let (current_series, current_num) = extract_series_info(&file_name)?;
 
@@ -228,8 +230,10 @@ fn get_next_file(path: String) -> Option<String> {
             {
                 continue;
             }
-            let entry_stem = entry_path.file_stem()?.to_string_lossy().to_string();
-            if let Some((series, num)) = extract_series_info(&entry_stem) {
+            let Some(entry_stem) = entry_path.file_stem() else {
+                continue;
+            };
+            if let Some((series, num)) = extract_series_info(&entry_stem.to_string_lossy()) {
                 if series == current_series {
                     candidates.push((num, entry_path));
                 }
@@ -237,11 +241,18 @@ fn get_next_file(path: String) -> Option<String> {
         }
     }
 
-    candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        let ord = if forward {
+            a.0.partial_cmp(&b.0)
+        } else {
+            b.0.partial_cmp(&a.0)
+        };
+        ord.unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    for (num, next_path) in candidates {
-        if num > current_num {
-            return next_path.to_str().map(|s| s.to_string());
+    for (num, sibling) in candidates {
+        if (forward && num > current_num) || (!forward && num < current_num) {
+            return sibling.to_str().map(|s| s.to_string());
         }
     }
 
@@ -249,47 +260,13 @@ fn get_next_file(path: String) -> Option<String> {
 }
 
 #[tauri::command]
+fn get_next_file(path: String) -> Option<String> {
+    find_sibling_file(&path, true)
+}
+
+#[tauri::command]
 fn get_prev_file(path: String) -> Option<String> {
-    let file_path = std::path::PathBuf::from(&path);
-    let parent = file_path.parent()?;
-    let file_name = file_path.file_stem()?.to_string_lossy().to_string();
-    let extension = file_path.extension()?.to_string_lossy().to_string();
-
-    let (current_series, current_num) = extract_series_info(&file_name)?;
-
-    let mut candidates: Vec<(f64, std::path::PathBuf)> = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(parent) {
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            if !entry_path.is_file() {
-                continue;
-            }
-            if entry_path
-                .extension()
-                .map(|e| e.to_string_lossy().to_lowercase())
-                != Some(extension.clone())
-            {
-                continue;
-            }
-            let entry_stem = entry_path.file_stem()?.to_string_lossy().to_string();
-            if let Some((series, num)) = extract_series_info(&entry_stem) {
-                if series == current_series {
-                    candidates.push((num, entry_path));
-                }
-            }
-        }
-    }
-
-    candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-
-    for (num, prev_path) in candidates {
-        if num < current_num {
-            return prev_path.to_str().map(|s| s.to_string());
-        }
-    }
-
-    None
+    find_sibling_file(&path, false)
 }
 
 #[tauri::command]
