@@ -13,9 +13,10 @@
 // limitations under the License.
 
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+use std::collections::HashMap;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use tauri::{Emitter, Manager, State};
 
 const LICENSE_TEXT: &str = include_str!("../LICENSE");
@@ -31,17 +32,26 @@ pub struct AppInfo {
     pub repository: String,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum ArchiveFormat {
-    Zip,
-    Tar,
+pub(crate) enum OpenArchive {
+    Zip(zip::ZipArchive<std::fs::File>),
+    Tar {
+        file: std::fs::File,
+        /// Entry href -> (data offset in file, data size).
+        index: HashMap<String, (u64, u64)>,
+    },
+    /// Solid 7z archives decode sequentially, so entries are decoded from the
+    /// file per request instead of keeping an open reader.
     SevenZ,
 }
 
 pub(crate) struct AppState {
     pub file_path: Option<PathBuf>,
+    pub archive: Option<OpenArchive>,
     pub cli_file: Option<String>,
-    pub archive_format: Option<ArchiveFormat>,
+}
+
+fn lock_state(state: &Mutex<AppState>) -> MutexGuard<'_, AppState> {
+    state.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 const IMAGE_EXTENSIONS: &[&str] = &[
@@ -60,36 +70,28 @@ pub struct ArchiveImages {
     pub images: Vec<ImageInfo>,
 }
 
-fn read_zip_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> {
-    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
-    let cursor = std::io::Cursor::new(buffer);
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
+fn read_zip_entry(
+    archive: &mut zip::ZipArchive<std::fs::File>,
+    href: &str,
+) -> Result<Vec<u8>, String> {
     let mut entry = archive.by_name(href).map_err(|e| e.to_string())?;
     let mut data = Vec::new();
     entry.read_to_end(&mut data).map_err(|e| e.to_string())?;
     Ok(data)
 }
 
-fn read_tar_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> {
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let reader = std::io::BufReader::new(file);
-    let mut archive = tar::Archive::new(reader);
-    for entry in archive.entries().map_err(|e| e.to_string())? {
-        let mut entry = entry.map_err(|e| e.to_string())?;
-        let entry_path = entry
-            .path()
-            .map_err(|e| e.to_string())?
-            .to_string_lossy()
-            .to_string();
-        if entry_path == href {
-            let mut data = Vec::new();
-            entry.read_to_end(&mut data).map_err(|e| e.to_string())?;
-            return Ok(data);
-        }
-    }
-    Err(format!("Entry '{}' not found in archive", href))
+fn read_tar_entry(
+    file: &mut std::fs::File,
+    index: &HashMap<String, (u64, u64)>,
+    href: &str,
+) -> Result<Vec<u8>, String> {
+    let &(offset, size) = index
+        .get(href)
+        .ok_or_else(|| format!("Entry '{}' not found in archive", href))?;
+    file.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    let mut data = vec![0u8; size as usize];
+    file.read_exact(&mut data).map_err(|e| e.to_string())?;
+    Ok(data)
 }
 
 fn read_7z_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> {
@@ -168,18 +170,21 @@ fn get_app_info() -> AppInfo {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_image_data(state: State<'_, Mutex<AppState>>, href: String) -> Result<String, String> {
-    let state = state.lock().unwrap();
-    let path = state.file_path.as_ref().ok_or("No file opened")?.clone();
-    let fmt = state.archive_format.unwrap_or(ArchiveFormat::Zip);
-    drop(state);
+    let mut state = lock_state(&state);
+    let path = state
+        .file_path
+        .clone()
+        .ok_or_else(|| "No file opened".to_string())?;
 
-    let image_data = match fmt {
-        ArchiveFormat::Zip => read_zip_entry(&path, &href)?,
-        ArchiveFormat::Tar => read_tar_entry(&path, &href)?,
-        ArchiveFormat::SevenZ => read_7z_entry(&path, &href)?,
+    let image_data = match state.archive.as_mut() {
+        Some(OpenArchive::Zip(archive)) => read_zip_entry(archive, &href)?,
+        Some(OpenArchive::Tar { file, index }) => read_tar_entry(file, index, &href)?,
+        Some(OpenArchive::SevenZ) => read_7z_entry(&path, &href)?,
+        None => return Err("No file opened".to_string()),
     };
+    drop(state);
 
     let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &image_data);
     Ok(encoded)
@@ -187,9 +192,9 @@ fn get_image_data(state: State<'_, Mutex<AppState>>, href: String) -> Result<Str
 
 #[tauri::command]
 fn close_file(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let mut state = state.lock().unwrap();
+    let mut state = lock_state(&state);
     state.file_path = None;
-    state.archive_format = None;
+    state.archive = None;
     Ok(())
 }
 
@@ -269,15 +274,12 @@ fn get_prev_file(path: String) -> Option<String> {
     find_sibling_file(&path, false)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_cbz_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
     let file_path = std::path::PathBuf::from(&path);
 
-    let mut file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
-    let cursor = std::io::Cursor::new(buffer);
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| e.to_string())?;
+    let file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
 
     let entries = (0..archive.len()).filter_map(|i| {
         let file = archive.by_index(i).ok()?;
@@ -296,52 +298,56 @@ fn open_cbz_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
     let images = collect_images(entries);
 
     {
-        let mut state = state.lock().unwrap();
+        let mut state = lock_state(&state);
         state.file_path = Some(file_path);
-        state.archive_format = Some(ArchiveFormat::Zip);
+        state.archive = Some(OpenArchive::Zip(archive));
     }
 
     Ok(ArchiveImages { images })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_cbt_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
     let file_path = std::path::PathBuf::from(&path);
 
     let file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
-    let reader = std::io::BufReader::new(file);
-    let mut archive = tar::Archive::new(reader);
+    let mut archive = tar::Archive::new(file);
 
-    let entries = archive.entries().map_err(|e| e.to_string())?;
-    let names: Vec<(String, String)> = entries
-        .filter_map(|e| {
-            let entry = e.ok()?;
-            let path = entry.path().ok()?;
-            let name = path.to_string_lossy().to_string();
+    let mut index: HashMap<String, (u64, u64)> = HashMap::new();
+    let mut names: Vec<(String, String)> = Vec::new();
+    {
+        let entries = archive.entries_with_seek().map_err(|e| e.to_string())?;
+        for entry in entries {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry
+                .path()
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .to_string();
             if name.ends_with('/') {
-                return None;
+                continue;
             }
             let ext = name.split('.').last().unwrap_or("").to_lowercase();
             if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
-                Some((name, ext))
-            } else {
-                None
+                index.insert(name.clone(), (entry.raw_file_position(), entry.size()));
+                names.push((name, ext));
             }
-        })
-        .collect();
+        }
+    }
+    let file = archive.into_inner();
 
     let images = collect_images(names.into_iter());
 
     {
-        let mut state = state.lock().unwrap();
+        let mut state = lock_state(&state);
         state.file_path = Some(file_path);
-        state.archive_format = Some(ArchiveFormat::Tar);
+        state.archive = Some(OpenArchive::Tar { file, index });
     }
 
     Ok(ArchiveImages { images })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<ArchiveImages, String> {
     let file_path = std::path::PathBuf::from(&path);
 
@@ -369,9 +375,9 @@ fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
     let images = collect_images(entries.into_iter());
 
     {
-        let mut state = state.lock().unwrap();
+        let mut state = lock_state(&state);
         state.file_path = Some(file_path);
-        state.archive_format = Some(ArchiveFormat::SevenZ);
+        state.archive = Some(OpenArchive::SevenZ);
     }
 
     Ok(ArchiveImages { images })
@@ -379,7 +385,7 @@ fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
 
 #[tauri::command]
 fn get_cli_file(state: State<'_, Mutex<AppState>>) -> Option<String> {
-    let mut state = state.lock().unwrap();
+    let mut state = lock_state(&state);
     state.cli_file.take()
 }
 
@@ -395,15 +401,15 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(path) = find_file_in_args(argv.iter().skip(1).cloned()) {
                 let state = app.state::<Mutex<AppState>>();
-                let mut state = state.inner().lock().unwrap();
+                let mut state = lock_state(state.inner());
                 state.cli_file = Some(path.clone());
                 let _ = app.emit("file-opened", path);
             }
         }))
         .manage(Mutex::new(AppState {
             file_path: None,
+            archive: None,
             cli_file,
-            archive_format: None,
         }))
         .invoke_handler(tauri::generate_handler![
             get_app_info,
@@ -439,7 +445,7 @@ pub fn run() {
                             if matches!(ext.as_ref(), "cbz" | "cbt" | "cb7") {
                                 let path_str = path.to_string_lossy().to_string();
                                 let state = app_handle.state::<Mutex<AppState>>();
-                                let mut state = state.inner().lock().unwrap();
+                                let mut state = lock_state(state.inner());
                                 state.cli_file = Some(path_str.clone());
                                 let _ = app_handle.emit("file-opened", path_str);
                             }
