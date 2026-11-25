@@ -48,8 +48,7 @@ function showPlaceholder() {
   loadGeneration++;
   images = [];
   currentFilePath = null;
-  zoomLevel = 100;
-  applyZoom();
+  resetView();
   prevBtn.disabled = true;
   nextBtn.disabled = true;
 }
@@ -157,7 +156,7 @@ function updateCurrentPage() {
   updateCounter(current, imgs.length);
 }
 
-function applyZoom() {
+function applyZoom(anchor = true) {
   const prevWidth = imagesContainer.offsetWidth || 1;
   const prevScrollLeft = viewerContainer.scrollLeft;
   const prevScrollTop = viewerContainer.scrollTop;
@@ -167,12 +166,33 @@ function applyZoom() {
   zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN;
   zoomInBtn.disabled = zoomLevel >= ZOOM_MAX;
 
+  if (!anchor) {
+    return;
+  }
+
   // Keep the content point at the viewport center in view after resizing.
   const scale = imagesContainer.offsetWidth / prevWidth;
   viewerContainer.scrollLeft =
     (prevScrollLeft + viewerContainer.clientWidth / 2) * scale - viewerContainer.clientWidth / 2;
   viewerContainer.scrollTop =
     (prevScrollTop + viewerContainer.clientHeight / 2) * scale - viewerContainer.clientHeight / 2;
+}
+
+// Jump to the top instantly (the container uses smooth scrolling, which would
+// otherwise animate from — and be re-anchored to — the previous position).
+function resetScroll() {
+  const behavior = viewerContainer.style.scrollBehavior;
+  viewerContainer.style.scrollBehavior = 'auto';
+  viewerContainer.scrollTop = 0;
+  viewerContainer.scrollLeft = 0;
+  viewerContainer.style.scrollBehavior = behavior;
+}
+
+// Fresh file, fresh view: 100% zoom and scrolled to the top.
+function resetView() {
+  zoomLevel = 100;
+  applyZoom(false);
+  resetScroll();
 }
 
 function zoomIn() {
@@ -226,10 +246,7 @@ async function displayImages(archiveImages) {
 
   imageCounter.classList.remove('hidden');
 
-  viewerContainer.scrollTop = 0;
-
-  zoomLevel = 100;
-  applyZoom();
+  resetView();
   updateCurrentPage();
 
   await loadNearbyImages();
@@ -252,6 +269,7 @@ async function updateNavButtons() {
 
 async function openFileByPath(filePath) {
   showLoading();
+  resetView();
   try {
     const ext = filePath.split('.').pop().toLowerCase();
     const command =
