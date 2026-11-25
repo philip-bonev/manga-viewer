@@ -26,7 +26,7 @@
 - **State**: `Mutex<AppState>` holds the currently opened file path, the open `OpenArchive` handle (if any), and a pending CLI file path.
 - **Series Navigation**: `find_sibling_file` (behind `get_next_file` / `get_prev_file`) scans the parent directory for files matching the current extension (case-insensitively) and the regex `^(.*?)[-_ ](\d+(?:\.\d+)?)` on the file stem (e.g. `Berserk-001.cbz`), then returns the nearest higher/lower issue number.
 - **Single Instance**: the `single-instance` plugin re-opens files passed to a second launch by storing the path in state and emitting the `file-opened` event (also used for macOS `RunEvent::Opened` and `tauri://drag-drop`).
-- **Build Stamp**: `build.rs` sets `BUILD_DATE` via `cargo:rustc-env`; `src/lib.rs` embeds `LICENSE` with `include_str!("../LICENSE")` — the LICENSE file must remain at the repo root or compilation fails.
+- **Build Stamp**: `build.rs` sets `BUILD_DATE` via `cargo:rustc-env`; `src/commands.rs` embeds `LICENSE` with `include_str!("../LICENSE")` — the LICENSE file must remain at the repo root or compilation fails.
 
 ## Command & Toolchain Reference
 
@@ -51,13 +51,19 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.cargo/bin:/usr/bin:/usr
 
 ### Project Layout
 - `src/main.rs` — binary entry point, calls `manga_viewer_lib::run()`.
-- `src/lib.rs` — all Tauri commands and archive logic.
+- `src/lib.rs` — app setup (`run()`), CLI/OS file-argument handling.
+- `src/commands.rs` — Tauri command handlers (IPC).
+- `src/archive.rs` — archive opening and entry reading (zip/tar/7z).
+- `src/images.rs` — entry filtering, MIME inference, natural sort, page listing.
+- `src/series.rs` — series-aware neighbour issue lookup.
+- `src/state.rs` — `AppState` / `OpenArchive` and the mutex lock helper.
+- `src/model.rs` — serializable IPC types (`AppInfo`, `ImageInfo`, `ArchiveImages`).
 - `web/` — `index.html`, `main.js`, `styles.css` (static frontend).
 - `tauri.conf.json` — window, bundle, file associations (`.cbz`, `.cbt`, `.cb7`).
 - `capabilities/default.json` — Tauri v2 permissions (`core`, `opener`, `dialog`, `window-state`).
 - `icons/`, `mime/`, `scripts/`, `build.rs`. Note: the crate root is the repo root (no `src-tauri/` directory).
 
-### Tauri Commands (IPC, in `src/lib.rs`)
+### Tauri Commands (IPC, in `src/commands.rs`)
 - `open_cbz_file(path: String)` / `open_cbt_file(path: String)` / `open_cb7_file(path: String)`: open an archive, return `ArchiveImages { images: Vec<ImageInfo> }` (sorted, with zero-padded ids), and store the file in state.
 - `get_image_data(href: String)`: read one entry from the open archive as base64.
 - `get_next_file(path: String)` / `get_prev_file(path: String)`: series-aware neighbour issue lookup (returns `Option<String>`).
