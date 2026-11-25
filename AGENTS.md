@@ -15,7 +15,7 @@
   - `LAZY_LOAD_THRESHOLD = 5`: an image is loaded when it is within 5 viewport heights above or below the current scroll position.
 - **Image Delivery**:
   - Images are fetched from the Rust backend via the `get_image_data` Tauri command, which returns **base64**. The frontend wraps it in a `data:<mime>;base64,...` URL using the `mime_type` from `ImageInfo` (do not re-derive MIME in JS). Do not switch to blob URLs or custom `tauri://` protocols without a compelling reason; if you ever do, call `URL.revokeObjectURL()` to avoid RAM hoarding.
-  - Zoom sets the layout width of `#images-container` in percent (25–500 %, step 25), so page edges stay reachable via scrolling. Do not switch back to `transform: scale()` — it clips content beyond the viewport. Shortcuts: `+`/`=` in, `-` out, `0` reset, `Ctrl`+wheel, plus toolbar buttons.
+  - Zoom sets the layout width of `#images-container` in percent (25–500 %, step 25), so page edges stay reachable via scrolling. Zooming keeps the page horizontally centered and preserves the vertical reading position; scroll writes must stay instant (no `scroll-behavior: smooth` — it makes anchor reads see stale mid-animation positions). Do not switch back to `transform: scale()` — it clips content beyond the viewport. Shortcuts: `+`/`=` in, `-` out, `0` reset, `Ctrl`+wheel, plus toolbar buttons.
 
 ### 2. Backend (`src/`)
 - **Archive Reading** (no `tokio`/`rayon` in this crate; heavy commands use `#[tauri::command(async)]` so the UI thread is never blocked):

@@ -158,7 +158,6 @@ function updateCurrentPage() {
 
 function applyZoom(anchor = true) {
   const prevWidth = imagesContainer.offsetWidth || 1;
-  const prevScrollLeft = viewerContainer.scrollLeft;
   const prevScrollTop = viewerContainer.scrollTop;
 
   imagesContainer.style.width = `${zoomLevel}%`;
@@ -170,22 +169,21 @@ function applyZoom(anchor = true) {
     return;
   }
 
-  // Keep the content point at the viewport center in view after resizing.
+  // Keep the image horizontally centered in the viewport.
+  viewerContainer.scrollLeft = Math.max(
+    0,
+    (imagesContainer.offsetWidth - viewerContainer.clientWidth) / 2
+  );
+
+  // Keep the vertical reading position stable while content rescales.
   const scale = imagesContainer.offsetWidth / prevWidth;
-  viewerContainer.scrollLeft =
-    (prevScrollLeft + viewerContainer.clientWidth / 2) * scale - viewerContainer.clientWidth / 2;
   viewerContainer.scrollTop =
     (prevScrollTop + viewerContainer.clientHeight / 2) * scale - viewerContainer.clientHeight / 2;
 }
 
-// Jump to the top instantly (the container uses smooth scrolling, which would
-// otherwise animate from — and be re-anchored to — the previous position).
 function resetScroll() {
-  const behavior = viewerContainer.style.scrollBehavior;
-  viewerContainer.style.scrollBehavior = 'auto';
   viewerContainer.scrollTop = 0;
   viewerContainer.scrollLeft = 0;
-  viewerContainer.style.scrollBehavior = behavior;
 }
 
 // Fresh file, fresh view: 100% zoom and scrolled to the top.
