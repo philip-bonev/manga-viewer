@@ -99,23 +99,31 @@ fn read_7z_entry(path: &std::path::Path, href: &str) -> Result<Vec<u8>, String> 
         .map_err(|e| e.to_string())?;
 
     let mut result: Option<Vec<u8>> = None;
+    let mut io_error: Option<String> = None;
     archive
         .for_each_entries(|entry, reader| {
             if entry.name() == href {
                 let mut data = Vec::new();
-                if std::io::Read::read_to_end(reader, &mut data).is_ok() {
-                    result = Some(data);
+                match std::io::Read::read_to_end(reader, &mut data) {
+                    Ok(_) => result = Some(data),
+                    Err(e) => io_error = Some(e.to_string()),
                 }
                 Ok(false)
             } else {
                 // Must consume entry data to advance the decoder
                 // (required for solid 7z archives where data is interleaved)
-                let _ = std::io::copy(reader, &mut std::io::sink());
+                if let Err(e) = std::io::copy(reader, &mut std::io::sink()) {
+                    io_error = Some(e.to_string());
+                    return Ok(false);
+                }
                 Ok(true)
             }
         })
         .map_err(|e| e.to_string())?;
 
+    if let Some(e) = io_error {
+        return Err(e);
+    }
     result.ok_or_else(|| format!("Entry '{}' not found in archive", href))
 }
 
@@ -132,23 +140,77 @@ fn mime_from_ext(ext: &str) -> &str {
     }
 }
 
-fn collect_images(entries: impl Iterator<Item = (String, String)>) -> Vec<ImageInfo> {
-    let mut images: Vec<ImageInfo> = entries
-        .filter(|(name, _)| {
-            let ext = name.split('.').last().unwrap_or("").to_lowercase();
-            IMAGE_EXTENSIONS.contains(&ext.as_str())
-        })
-        .map(|(name, _)| {
-            let ext = name.split('.').last().unwrap_or("").to_lowercase();
+fn ext_of(name: &str) -> String {
+    name.rsplit_once('.')
+        .map(|(_, ext)| ext.to_lowercase())
+        .unwrap_or_default()
+}
+
+fn is_image_entry(name: &str) -> bool {
+    IMAGE_EXTENSIONS.contains(&ext_of(name).as_str())
+}
+
+/// Compare entry names with natural number ordering so that `page2` sorts
+/// before `page10` (plain lexicographic sort would not).
+fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let mut a = a.bytes().peekable();
+    let mut b = b.bytes().peekable();
+    loop {
+        match (a.next(), b.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) => {
+                if x.is_ascii_digit() && y.is_ascii_digit() {
+                    let mut xn = u128::from(x - b'0');
+                    while let Some(&c) = a.peek() {
+                        if !c.is_ascii_digit() {
+                            break;
+                        }
+                        xn = xn
+                            .saturating_mul(10)
+                            .saturating_add(u128::from(c - b'0'));
+                        a.next();
+                    }
+                    let mut yn = u128::from(y - b'0');
+                    while let Some(&c) = b.peek() {
+                        if !c.is_ascii_digit() {
+                            break;
+                        }
+                        yn = yn
+                            .saturating_mul(10)
+                            .saturating_add(u128::from(c - b'0'));
+                        b.next();
+                    }
+                    match xn.cmp(&yn) {
+                        Ordering::Equal => continue,
+                        ord => return ord,
+                    }
+                }
+                match x.to_ascii_lowercase().cmp(&y.to_ascii_lowercase()) {
+                    Ordering::Equal => continue,
+                    ord => return ord,
+                }
+            }
+        }
+    }
+}
+
+fn collect_images(names: impl Iterator<Item = String>) -> Vec<ImageInfo> {
+    let mut images: Vec<ImageInfo> = names
+        .filter(|name| is_image_entry(name))
+        .map(|name| {
+            let mime_type = mime_from_ext(&ext_of(&name)).to_string();
             ImageInfo {
                 id: String::new(),
                 href: name,
-                mime_type: mime_from_ext(&ext).to_string(),
+                mime_type,
             }
         })
         .collect();
 
-    images.sort_by(|a, b| a.href.cmp(&b.href));
+    images.sort_by(|a, b| natural_cmp(&a.href, &b.href));
 
     for (i, img) in images.iter_mut().enumerate() {
         img.id = format!("{:05}", i);
@@ -287,12 +349,7 @@ fn open_cbz_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
         if name.starts_with("__MACOSX") || name.ends_with('/') {
             return None;
         }
-        let ext = name.split('.').last().unwrap_or("").to_lowercase();
-        if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
-            Some((name, ext))
-        } else {
-            None
-        }
+        Some(name)
     });
 
     let images = collect_images(entries);
@@ -314,7 +371,7 @@ fn open_cbt_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
     let mut archive = tar::Archive::new(file);
 
     let mut index: HashMap<String, (u64, u64)> = HashMap::new();
-    let mut names: Vec<(String, String)> = Vec::new();
+    let mut names: Vec<String> = Vec::new();
     {
         let entries = archive.entries_with_seek().map_err(|e| e.to_string())?;
         for entry in entries {
@@ -327,11 +384,10 @@ fn open_cbt_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
             if name.ends_with('/') {
                 continue;
             }
-            let ext = name.split('.').last().unwrap_or("").to_lowercase();
-            if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+            if is_image_entry(&name) {
                 index.insert(name.clone(), (entry.raw_file_position(), entry.size()));
-                names.push((name, ext));
             }
+            names.push(name);
         }
     }
     let file = archive.into_inner();
@@ -354,7 +410,7 @@ fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
     let reader = sevenz_rust::SevenZReader::open(file_path.to_string_lossy().as_ref(), "".into())
         .map_err(|e| e.to_string())?;
 
-    let entries: Vec<(String, String)> = reader
+    let entries: Vec<String> = reader
         .archive()
         .files
         .iter()
@@ -363,12 +419,7 @@ fn open_cb7_file(state: State<'_, Mutex<AppState>>, path: String) -> Result<Arch
             if entry.is_directory() {
                 return None;
             }
-            let ext = name.split('.').last().unwrap_or("").to_lowercase();
-            if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
-                Some((name, ext))
-            } else {
-                None
-            }
+            Some(name)
         })
         .collect();
 
