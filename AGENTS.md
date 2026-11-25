@@ -26,6 +26,7 @@
 - **State**: `Mutex<AppState>` holds the currently opened file path, the open `OpenArchive` handle (if any), and a pending CLI file path.
 - **Series Navigation**: `find_sibling_file` (behind `get_next_file` / `get_prev_file`) scans the parent directory for files matching the current extension (case-insensitively) and the regex `^(.*?)[-_ ](\d+(?:\.\d+)?)` on the file stem (e.g. `Berserk-001.cbz`), then returns the nearest higher/lower issue number.
 - **Single Instance**: the `single-instance` plugin re-opens files passed to a second launch by storing the path in state and emitting the `file-opened` event (also used for macOS `RunEvent::Opened` and `tauri://drag-drop`).
+- **App Menu**: desktop menu (`src/menu.rs`) with About and Quit; About opens the dedicated `about` window (`web/about.html`) which is populated by `get_app_info`.
 - **Build Stamp**: `build.rs` sets `BUILD_DATE` via `cargo:rustc-env`; `src/commands.rs` embeds `LICENSE` with `include_str!("../LICENSE")` — the LICENSE file must remain at the repo root or compilation fails.
 
 ## Command & Toolchain Reference
@@ -58,7 +59,8 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.cargo/bin:/usr/bin:/usr
 - `src/series.rs` — series-aware neighbour issue lookup.
 - `src/state.rs` — `AppState` / `OpenArchive` and the mutex lock helper.
 - `src/model.rs` — serializable IPC types (`AppInfo`, `ImageInfo`, `ArchiveImages`).
-- `web/` — `index.html`, `main.js`, `styles.css` (static frontend).
+- `src/menu.rs` — desktop app menu (About window, Quit).
+- `web/` — `index.html`, `main.js`, `styles.css` (main window) and `about.html`, `about.js`, `about.css` (About window), all static, no build step.
 - `tauri.conf.json` — window, bundle, file associations (`.cbz`, `.cbt`, `.cb7`).
 - `capabilities/default.json` — Tauri v2 permissions (`core`, `opener`, `dialog`, `window-state`).
 - `icons/`, `mime/`, `scripts/`, `build.rs`. Note: the crate root is the repo root (no `src-tauri/` directory).
@@ -70,7 +72,7 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.cargo/bin:/usr/bin:/usr
 - `get_cli_file()`: take the pending CLI / OS-open file path.
 - `get_app_info()`: name, version, build date, author, license name/text, repository.
 ## Coding & Performance Guidelines
-- **UI Chrome**: keep the interface minimal (single toolbar). CSS transitions only for overlays (e.g. the About dialog) and the drag-over highlight.
+- **UI Chrome**: keep the interface minimal (single toolbar); About lives in the app menu and opens in a separate window. CSS transitions only for the drag-over highlight.
 - **Threading**: heavy commands (`open_*`, `get_image_data`) use `#[tauri::command(async)]` so they run off the UI thread; if you add more heavy work (conversion, large-archive scans), do the same rather than blocking the UI thread.
 - **No dependencies without need**: only add crates to `Cargo.toml` when required; the current dependency set is deliberately small (serde, zip, tar, sevenz-rust, base64, regex, percent-encoding + Tauri plugins).
 - **Conventions**: lowercase, short git commit messages; Apache-2.0 headers on new source files; keep the frontend dependency-free.

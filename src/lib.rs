@@ -15,6 +15,8 @@
 mod archive;
 mod commands;
 mod images;
+#[cfg(desktop)]
+mod menu;
 mod model;
 mod series;
 mod state;
@@ -63,6 +65,9 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
+
+    #[cfg(desktop)]
+    menu::setup(&app).expect("error while building the app menu");
 
     #[allow(unused_variables)]
     app.run(|app_handle, event| {
