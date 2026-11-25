@@ -45,6 +45,7 @@ fn open_about_window(app: &tauri::AppHandle) {
     }
     let _ = WebviewWindowBuilder::new(app, ABOUT_WINDOW, WebviewUrl::App("about.html".into()))
         .title("About Manga Viewer")
+        .min_inner_size(800.0, 640.0)
         .inner_size(800.0, 640.0)
         .build();
 }
