@@ -28,7 +28,6 @@ const LOAD_CONCURRENCY = 4;
 const openBtn = document.getElementById('open-btn');
 const prevBtn = document.getElementById('prev-btn');
 const nextBtn = document.getElementById('next-btn');
-const closeBtn = document.getElementById('close-btn');
 const zoomInBtn = document.getElementById('zoom-in-btn');
 const zoomOutBtn = document.getElementById('zoom-out-btn');
 const zoomFitBtn = document.getElementById('zoom-fit-btn');
@@ -268,14 +267,12 @@ async function openFileByPath(filePath) {
       currentFilePath = filePath;
       const displayName = filePath.split(/[\\/]/).pop() || 'Unknown';
       updateFileName(displayName);
-      closeBtn.disabled = false;
       enableZoomControls();
       await displayImages(result);
       await updateNavButtons();
     } else {
       showPlaceholder();
       updateFileName('No images found');
-      closeBtn.disabled = true;
       disableZoomControls();
       hideLoading();
     }
@@ -283,7 +280,6 @@ async function openFileByPath(filePath) {
     console.error('Failed to open file:', error);
     showPlaceholder();
     updateFileName(`Error: ${error?.message || error}`);
-    closeBtn.disabled = true;
     disableZoomControls();
     hideLoading();
   }
@@ -310,21 +306,8 @@ async function openFile() {
     console.error('Failed to open file:', error);
     showPlaceholder();
     updateFileName(`Error: ${error?.message || error}`);
-    closeBtn.disabled = true;
     disableZoomControls();
     hideLoading();
-  }
-}
-
-async function closeFile() {
-  try {
-    await invoke('close_file');
-    showPlaceholder();
-    updateFileName('No file opened');
-    closeBtn.disabled = true;
-    disableZoomControls();
-  } catch (error) {
-    console.error('Failed to close file:', error);
   }
 }
 
@@ -347,7 +330,6 @@ async function openPrevFile() {
 openBtn.addEventListener('click', openFile);
 prevBtn.addEventListener('click', openPrevFile);
 nextBtn.addEventListener('click', openNextFile);
-closeBtn.addEventListener('click', closeFile);
 zoomInBtn.addEventListener('click', zoomIn);
 zoomOutBtn.addEventListener('click', zoomOut);
 zoomFitBtn.addEventListener('click', zoomFit);

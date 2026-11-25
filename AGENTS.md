@@ -62,7 +62,6 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.cargo/bin:/usr/bin:/usr
 - `get_image_data(href: String)`: read one entry from the open archive as base64.
 - `get_next_file(path: String)` / `get_prev_file(path: String)`: series-aware neighbour issue lookup (returns `Option<String>`).
 - `get_cli_file()`: take the pending CLI / OS-open file path.
-- `close_file()`: clear the open archive from state.
 - `get_app_info()`: name, version, build date, author, license name/text, repository.
 ## Coding & Performance Guidelines
 - **UI Chrome**: keep the interface minimal (single toolbar). CSS transitions only for overlays (e.g. the About dialog) and the drag-over highlight.

@@ -250,14 +250,6 @@ fn get_image_data(state: State<'_, Mutex<AppState>>, href: String) -> Result<Str
     Ok(encoded)
 }
 
-#[tauri::command]
-fn close_file(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let mut state = lock_state(&state);
-    state.file_path = None;
-    state.archive = None;
-    Ok(())
-}
-
 fn extract_series_info(file_stem: &str) -> Option<(String, f64)> {
     static SERIES_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = SERIES_RE.get_or_init(|| {
@@ -490,7 +482,6 @@ pub fn run() {
             open_cbt_file,
             open_cb7_file,
             get_image_data,
-            close_file,
             get_cli_file,
             get_next_file,
             get_prev_file
