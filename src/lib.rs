@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 
 const LICENSE_TEXT: &str = include_str!("../LICENSE");
 
@@ -422,9 +422,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            use tauri::Emitter;
-            use tauri::Manager;
-            if let Some(path) = find_file_in_args(argv.iter().cloned()) {
+            if let Some(path) = find_file_in_args(argv.iter().skip(1).cloned()) {
                 let state = app.state::<Mutex<AppState>>();
                 let mut state = state.inner().lock().unwrap();
                 state.cli_file = Some(path.clone());
@@ -463,8 +461,6 @@ pub fn run() {
     app.run(|app_handle, event| {
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
         if let tauri::RunEvent::Opened { urls } = event {
-            use tauri::Emitter;
-            use tauri::Manager;
             for url in urls {
                 if url.scheme() == "file" {
                     if let Ok(path) = url.to_file_path() {
