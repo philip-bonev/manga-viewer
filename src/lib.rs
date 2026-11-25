@@ -300,10 +300,11 @@ fn find_sibling_file(path: &str, forward: bool) -> Option<String> {
             let Some(entry_stem) = entry_path.file_stem() else {
                 continue;
             };
-            if let Some((series, num)) = extract_series_info(&entry_stem.to_string_lossy()) {
-                if series == current_series {
-                    candidates.push((num, entry_path));
-                }
+            let Some((series, num)) = extract_series_info(&entry_stem.to_string_lossy()) else {
+                continue;
+            };
+            if series == current_series {
+                candidates.push((num, entry_path));
             }
         }
     }
@@ -489,19 +490,22 @@ pub fn run() {
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
         if let tauri::RunEvent::Opened { urls } = event {
             for url in urls {
-                if url.scheme() == "file" {
-                    if let Ok(path) = url.to_file_path() {
-                        if let Some(ext) = path.extension() {
-                            let ext = ext.to_string_lossy().to_lowercase();
-                            if matches!(ext.as_ref(), "cbz" | "cbt" | "cb7") {
-                                let path_str = path.to_string_lossy().to_string();
-                                let state = app_handle.state::<Mutex<AppState>>();
-                                let mut state = lock_state(state.inner());
-                                state.cli_file = Some(path_str.clone());
-                                let _ = app_handle.emit("file-opened", path_str);
-                            }
-                        }
-                    }
+                if url.scheme() != "file" {
+                    continue;
+                }
+                let Ok(path) = url.to_file_path() else {
+                    continue;
+                };
+                let Some(ext) = path.extension() else {
+                    continue;
+                };
+                let ext = ext.to_string_lossy().to_lowercase();
+                if matches!(ext.as_str(), "cbz" | "cbt" | "cb7") {
+                    let path_str = path.to_string_lossy().to_string();
+                    let state = app_handle.state::<Mutex<AppState>>();
+                    let mut state = lock_state(state.inner());
+                    state.cli_file = Some(path_str.clone());
+                    let _ = app_handle.emit("file-opened", path_str);
                 }
             }
         }
