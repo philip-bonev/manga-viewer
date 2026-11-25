@@ -560,3 +560,129 @@ fn find_file_in_args(args: impl Iterator<Item = String>) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn natural_cmp_orders_numerically() {
+        use std::cmp::Ordering;
+        assert_eq!(natural_cmp("page2.jpg", "page10.jpg"), Ordering::Less);
+        assert_eq!(natural_cmp("page10.jpg", "page2.jpg"), Ordering::Greater);
+        assert_eq!(natural_cmp("page2.jpg", "page2.jpg"), Ordering::Equal);
+        assert_eq!(natural_cmp("a1b2", "a1b10"), Ordering::Less);
+        assert_eq!(natural_cmp("Page2.JPG", "page10.jpg"), Ordering::Less);
+        assert_eq!(natural_cmp("img", "img2"), Ordering::Less);
+    }
+
+    #[test]
+    fn extract_series_info_parses_name_and_number() {
+        assert_eq!(
+            extract_series_info("Berserk-001"),
+            Some(("berserk".to_string(), 1.0))
+        );
+        assert_eq!(
+            extract_series_info("solo leveling 012"),
+            Some(("solo leveling".to_string(), 12.0))
+        );
+        assert_eq!(
+            extract_series_info("chapter-1.5"),
+            Some(("chapter".to_string(), 1.5))
+        );
+        assert_eq!(extract_series_info("no-numbers-here"), None);
+        assert_eq!(extract_series_info("123"), None);
+    }
+
+    #[test]
+    fn ext_and_image_entry_detection() {
+        assert_eq!(ext_of("dir/cover.JPG"), "jpg");
+        assert_eq!(ext_of("noext"), "");
+        assert!(is_image_entry("a/b/c.png"));
+        assert!(is_image_entry("a/b/c.TIFF"));
+        assert!(!is_image_entry("a/b/c.txt"));
+        assert!(!is_image_entry("README"));
+    }
+
+    #[test]
+    fn collect_images_sorts_naturally_and_numbers_ids() {
+        let names = ["p10.jpg", "p2.jpg", "p1.jpg", "notes.txt"].map(String::from);
+        let images = collect_images(names.into_iter());
+        let hrefs: Vec<&str> = images.iter().map(|i| i.href.as_str()).collect();
+        assert_eq!(hrefs, ["p1.jpg", "p2.jpg", "p10.jpg"]);
+        assert_eq!(images[0].id, "00000");
+        assert_eq!(images[2].id, "00002");
+        assert_eq!(images[0].mime_type, "image/jpeg");
+    }
+
+    #[test]
+    fn find_sibling_file_orders_by_issue_number() {
+        let dir = std::env::temp_dir().join(format!("manga-viewer-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        for name in ["Berserk-001.cbz", "Berserk-002.cbz", "Berserk-010.cbz", "Other-001.cbz"] {
+            std::fs::write(dir.join(name), b"").expect("write placeholder");
+        }
+
+        let current = dir.join("Berserk-002.cbz");
+        let next = find_sibling_file(current.to_str().unwrap(), true).expect("next exists");
+        assert!(next.ends_with("Berserk-010.cbz"));
+        let prev = find_sibling_file(current.to_str().unwrap(), false).expect("prev exists");
+        assert!(prev.ends_with("Berserk-001.cbz"));
+
+        // Uppercase extensions match case-insensitively.
+        let current_up = dir.join("Berserk-002.CBZ");
+        std::fs::write(&current_up, b"").expect("write placeholder");
+        assert!(find_sibling_file(current_up.to_str().unwrap(), true).is_some());
+
+        std::fs::remove_dir_all(&dir).expect("cleanup temp dir");
+    }
+
+    fn assert_archive_roundtrip(path: &std::path::Path) {
+        let (images, mut archive) = match ext_of(&path.to_string_lossy()).as_str() {
+            "cbz" => open_zip(path).expect("open zip"),
+            "cbt" => open_tar(path).expect("open tar"),
+            "cb7" => open_sevenz(path).expect("open 7z"),
+            other => panic!("unexpected extension: {other}"),
+        };
+        assert!(
+            !images.is_empty(),
+            "{}: no images listed",
+            path.display()
+        );
+        for img in [&images[0], &images[images.len() - 1]] {
+            let data = read_entry(&mut archive, path, &img.href).expect("read entry");
+            assert!(
+                !data.is_empty(),
+                "{}: empty entry {}",
+                path.display(),
+                img.href
+            );
+        }
+    }
+
+    /// Smoke test against real archives; set MANGA_TEST_DIR to a directory
+    /// containing .cbz/.cbt/.cb7 files. Skipped when the variable is unset.
+    #[test]
+    fn smoke_test_sample_archives() {
+        let Some(dir) = std::env::var_os("MANGA_TEST_DIR").map(std::path::PathBuf::from) else {
+            eprintln!("MANGA_TEST_DIR not set; skipping sample archive smoke tests");
+            return;
+        };
+        let mut tested = 0;
+        for entry in std::fs::read_dir(&dir).expect("read test dir").flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if !matches!(
+                ext_of(&path.to_string_lossy()).as_str(),
+                "cbz" | "cbt" | "cb7"
+            ) {
+                continue;
+            }
+            assert_archive_roundtrip(&path);
+            tested += 1;
+        }
+        assert!(tested > 0, "no archives found in {}", dir.display());
+    }
+}
