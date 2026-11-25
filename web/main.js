@@ -46,6 +46,13 @@ function showPlaceholder() {
   placeholder.style.display = 'flex';
   imagesContainer.innerHTML = '';
   imageCounter.classList.add('hidden');
+  loadGeneration++;
+  images = [];
+  currentFilePath = null;
+  zoomLevel = 100;
+  applyZoom();
+  prevBtn.disabled = true;
+  nextBtn.disabled = true;
 }
 
 function hidePlaceholder() {
@@ -69,25 +76,10 @@ function updateCounter(current, total) {
   totalImagesSpan.textContent = total;
 }
 
-function getImageMimeType(href) {
-  const ext = href.split('.').pop().toLowerCase();
-  const mimeTypes = {
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'png': 'image/png',
-    'gif': 'image/gif',
-    'webp': 'image/webp',
-    'svg': 'image/svg+xml',
-    'bmp': 'image/bmp',
-  };
-  return mimeTypes[ext] || 'image/jpeg';
-}
-
-async function loadImageData(href) {
+async function loadImageData(href, mimeType) {
   try {
     const base64Data = await invoke('get_image_data', { href });
-    const mimeType = getImageMimeType(href);
-    return `data:${mimeType};base64,${base64Data}`;
+    return `data:${mimeType || 'image/jpeg'};base64,${base64Data}`;
   } catch (error) {
     console.error('Failed to load image:', error);
     return null;
@@ -97,6 +89,7 @@ async function loadImageData(href) {
 function createImageElement(imageInfo, index) {
   const img = document.createElement('img');
   img.dataset.href = imageInfo.href;
+  img.dataset.mime = imageInfo.mime_type;
   img.dataset.index = index;
   img.alt = `Page ${index + 1}`;
   img.style.minHeight = '200px';
@@ -137,7 +130,7 @@ async function loadNearbyImages() {
     const batch = pending.slice(i, i + LOAD_CONCURRENCY);
     await Promise.all(batch.map(async (img) => {
       img.dataset.loading = 'true';
-      const dataUrl = await loadImageData(img.dataset.href);
+      const dataUrl = await loadImageData(img.dataset.href, img.dataset.mime);
       delete img.dataset.loading;
       if (generation !== loadGeneration) {
         return;
@@ -273,7 +266,7 @@ async function openFileByPath(filePath) {
     const result = await invoke(command, { path: filePath });
     if (result.images && result.images.length > 0) {
       currentFilePath = filePath;
-      const displayName = filePath.split('/').pop() || filePath.split('\\').pop() || 'Unknown';
+      const displayName = filePath.split(/[\\/]/).pop() || 'Unknown';
       updateFileName(displayName);
       closeBtn.disabled = false;
       enableZoomControls();
@@ -289,7 +282,7 @@ async function openFileByPath(filePath) {
   } catch (error) {
     console.error('Failed to open file:', error);
     showPlaceholder();
-    updateFileName('Error opening file');
+    updateFileName(`Error: ${error?.message || error}`);
     closeBtn.disabled = true;
     disableZoomControls();
     hideLoading();
@@ -316,7 +309,7 @@ async function openFile() {
   } catch (error) {
     console.error('Failed to open file:', error);
     showPlaceholder();
-    updateFileName('Error opening file');
+    updateFileName(`Error: ${error?.message || error}`);
     closeBtn.disabled = true;
     disableZoomControls();
     hideLoading();
@@ -326,16 +319,10 @@ async function openFile() {
 async function closeFile() {
   try {
     await invoke('close_file');
-    currentFilePath = null;
-    images = [];
-    loadGeneration++;
-    zoomLevel = 100;
-    applyZoom();
+    showPlaceholder();
     updateFileName('No file opened');
     closeBtn.disabled = true;
     disableZoomControls();
-    showPlaceholder();
-    await updateNavButtons();
   } catch (error) {
     console.error('Failed to close file:', error);
   }
@@ -441,13 +428,6 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('DOMContentLoaded', async () => {
-  const cliFile = await invoke('get_cli_file');
-  if (cliFile) {
-    await openFileByPath(cliFile);
-  } else {
-    showPlaceholder();
-  }
-
   const body = document.body;
   let dragCounter = 0;
 
@@ -495,4 +475,13 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
     }
   });
+
+  // Consume the CLI file last so no file-opened event can be missed while
+  // the listeners above are still being registered.
+  const cliFile = await invoke('get_cli_file');
+  if (cliFile) {
+    await openFileByPath(cliFile);
+  } else {
+    showPlaceholder();
+  }
 });
