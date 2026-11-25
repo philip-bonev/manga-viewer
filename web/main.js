@@ -139,10 +139,21 @@ async function loadNearbyImages() {
 }
 
 function applyZoom() {
-  imagesContainer.style.transform = `scale(${zoomLevel / 100})`;
+  const prevWidth = imagesContainer.offsetWidth || 1;
+  const prevScrollLeft = viewerContainer.scrollLeft;
+  const prevScrollTop = viewerContainer.scrollTop;
+
+  imagesContainer.style.width = `${zoomLevel}%`;
   zoomLevelDisplay.textContent = `${zoomLevel}%`;
   zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN;
   zoomInBtn.disabled = zoomLevel >= ZOOM_MAX;
+
+  // Keep the content point at the viewport center in view after resizing.
+  const scale = imagesContainer.offsetWidth / prevWidth;
+  viewerContainer.scrollLeft =
+    (prevScrollLeft + viewerContainer.clientWidth / 2) * scale - viewerContainer.clientWidth / 2;
+  viewerContainer.scrollTop =
+    (prevScrollTop + viewerContainer.clientHeight / 2) * scale - viewerContainer.clientHeight / 2;
 }
 
 function zoomIn() {

@@ -128,7 +128,7 @@ body.drag-over::after {
 #viewer-container {
   height: calc(100vh - 48px);
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   scroll-behavior: smooth;
   position: relative;
 }
@@ -174,8 +174,7 @@ body.drag-over::after {
   align-items: center;
   padding: 8px;
   gap: 4px;
-  transition: transform 0.15s ease;
-  transform-origin: top center;
+  margin: 0 auto;
 }
 
 #images-container img {
